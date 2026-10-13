@@ -1,67 +1,107 @@
-"""Error-path templates: subprocess CLI, no network, relative fixtures only."""
+"""Fehlerpfad-Vertrag der Domänen-Kommandos (offline, Fake-Portal).
+
+Ohne Session -> 2, Netz down -> 3, kaputtes HTML -> 4, fehlende Args -> 1,
+--confirm-Gating -> ohne confirm kein einziger Request.
+"""
 
 from __future__ import annotations
 
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
+import pytest
 
+from conftest import json_out
 from hochschulstart_cli import exit_codes as ec
 
-ROOT = Path(__file__).resolve().parents[1]
 
-
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT / "src")
-    return subprocess.run(
-        [sys.executable, "-m", "hochschulstart_cli", *args],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-
-
-def test_unknown_flag_exit_input():
-    proc = run_cli("--nope")
-    assert proc.returncode == ec.INPUT
-
-
-def test_validate_negative_count_json():
-    proc = run_cli("validate", "--count", "-1", "--json")
-    assert proc.returncode == ec.INPUT
-    payload = json.loads(proc.stdout)
+def test_status_without_session_exit_2_no_request(cli_runner, portal):
+    proc = cli_runner("status", "--json")
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
     assert payload["ok"] is False
-    assert payload["error"]["code"] == ec.INPUT
-    assert len(proc.stdout.strip().splitlines()) == 1
+    assert payload["error"]["code"] == ec.AUTH
+    assert portal.requests == [], "ohne Session darf kein Request rausgehen"
 
 
-def test_validate_missing_args_human():
-    proc = run_cli("validate")
+def test_annehmen_without_confirm_aborts_before_request(cli_runner, portal):
+    proc = cli_runner("annehmen", "B-1001", "--json")
     assert proc.returncode == ec.INPUT
-    assert proc.stderr.strip()
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.INPUT
+    assert "--confirm" in payload["error"]["message"]
+    assert portal.requests == [], "ohne --confirm darf kein Request rausgehen"
 
 
-def test_state_dry_run_no_file(tmp_path: Path):
-    dest = tmp_path / "nested" / "state.json"
-    proc = run_cli(
-        "state",
-        str(dest),
-        "--set",
-        "k=v",
-        "--dry-run",
+def test_absagen_without_confirm_aborts_before_request(cli_runner, portal):
+    proc = cli_runner("absagen", "B-1001", "--json")
+    assert proc.returncode == ec.INPUT
+    assert portal.requests == []
+
+
+def test_annehmen_confirm_without_session_exit_2(cli_runner, portal):
+    proc = cli_runner("annehmen", "B-1001", "--confirm", "--json")
+    assert proc.returncode == ec.AUTH
+    assert portal.requests == []
+
+
+def test_login_missing_credentials_exit_2(cli_runner, portal):
+    proc = cli_runner(
+        "login",
         "--json",
+        env_extra={"HOCHSCHULSTART_USERNAME": None, "HOCHSCHULSTART_PASSWORD": None},
     )
-    assert proc.returncode == ec.OK
-    assert not dest.exists()
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.AUTH
+    assert portal.requests == []
 
 
-def test_url_json_success():
-    proc = run_cli("url", "https://api.example.com/v1", "users", "--json")
+def test_login_wrong_password_exit_2(cli_runner, portal):
+    proc = cli_runner("login", "--json", env_extra={"HOCHSCHULSTART_PASSWORD": "falsch"})
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.AUTH
+    assert "testpass" not in proc.stdout + proc.stderr
+    assert "falsch" not in proc.stdout + proc.stderr
+
+
+def test_network_down_exit_3(cli_runner, portal):
+    proc = cli_runner(
+        "fristen",
+        "--json",
+        env_extra={"HOCHSCHULSTART_PUBLIC_URL": "http://127.0.0.1:9/terminuebersicht"},
+    )
+    assert proc.returncode == ec.NETWORK
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.NETWORK
+
+
+def test_broken_html_exit_4(cli_runner, portal):
+    assert cli_runner("login", "--json").returncode == ec.OK
+    portal.mode = "bad_html"
+    proc = cli_runner("status", "--json")
+    assert proc.returncode == ec.PARSE
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.PARSE
+
+
+def test_maintenance_page_exit_3(cli_runner, portal):
+    portal.mode = "maintenance"
+    proc = cli_runner("login", "--json")
+    assert proc.returncode == ec.NETWORK
+
+
+def test_missing_argument_exit_1(cli_runner, portal):
+    proc = cli_runner("annehmen", "--json")
+    assert proc.returncode == ec.INPUT
+    assert portal.requests == []
+
+
+def test_unknown_flag_exit_1(cli_runner, portal):
+    proc = cli_runner("--nope")
+    assert proc.returncode == ec.INPUT
+
+
+@pytest.mark.parametrize("command", ["version"])
+def test_version_human(cli_runner, portal, command):
+    proc = cli_runner(command)
     assert proc.returncode == ec.OK
-    payload = json.loads(proc.stdout)
-    assert payload["ok"] is True
-    assert payload["url"] == "https://api.example.com/v1/users"
+    assert proc.stdout.strip()
