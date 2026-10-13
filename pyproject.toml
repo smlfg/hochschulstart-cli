@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hochschulstart"
+version = "0.1.0"
+description = "hochschulstart.de (DoSV) CLI: Login, Bewerbungsstatus, Ranglisten, Fristen, Angebote, Watch — Annahme/Absage nur mit --confirm"
+readme = "README.md"
+authors = [{ name = "Samuel Fleig" }]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "mcp>=1.9.0,<2"]
+keyring = ["keyring>=25.0"]
+
+[project.scripts]
+hochschulstart = "hochschulstart_cli.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hochschulstart_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+asyncio_mode = "auto"
