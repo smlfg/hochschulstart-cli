@@ -17,6 +17,21 @@ SYNTH_PASSWORD = "testpass"
 SYNTH_SESSION = "SYNTH-SESSION-0001"
 SYNTH_CSRF = "SYNTH-CSRF-0001"
 
+AUTH_CAPTCHA_HTML = """<!DOCTYPE html><html lang="de"><head><title>Sicherheitsabfrage</title></head>
+<body><h1>Sicherheitsabfrage</h1><p>Bitte bestätigen Sie das Captcha.</p><div class="g-recaptcha"></div></body></html>"""
+
+AUTH_2FA_HTML = """<!DOCTYPE html><html lang="de"><head><title>2FA</title></head>
+<body><h1>Zwei-Faktor-Authentifizierung</h1><p>Authenticator-Code eingeben.</p></body></html>"""
+
+AUTH_BUNDID_HTML = """<!DOCTYPE html><html lang="de"><head><title>BundID</title></head>
+<body><h1>Anmeldung mit BundID</h1><p>Weiter mit Ihrer BundID.</p></body></html>"""
+
+_AUTH_WALL_HTML = {
+    "captcha": AUTH_CAPTCHA_HTML,
+    "2fa": AUTH_2FA_HTML,
+    "bundid": AUTH_BUNDID_HTML,
+}
+
 LOGIN_HTML = """<!DOCTYPE html><html lang="de"><head><title>Bewerbungsportal Anmeldung</title></head>
 <body>
 <h1>Bewerbungsportal für das Dialogorientierte Serviceverfahren (DoSV)</h1>
@@ -116,6 +131,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(500, "<html><body>Serverfehler</body></html>")
 
         if path in ("/bewerber", "/bewerber/"):
+            if portal.auth_wall in _AUTH_WALL_HTML:
+                return self._send(200, _AUTH_WALL_HTML[portal.auth_wall])
             return self._send(200, LOGIN_HTML)
         if path == "/terminuebersicht":
             return self._send(200, f"<html><body>{_termine_table(TERMINE_ROWS)}</body></html>")
@@ -163,6 +180,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, MAINTENANCE_HTML)
         if path == "/bewerber/login":
             if fields.get("benutzername") == portal.username and fields.get("passwort") == portal.password:
+                if portal.login_response_wall in _AUTH_WALL_HTML:
+                    return self._send(200, _AUTH_WALL_HTML[portal.login_response_wall])
                 return self._send(200, "<html><body>Angemeldet</body></html>", cookie=portal.session)
             fail_body = (
                 LOGIN_HTML.replace(
@@ -196,6 +215,8 @@ class FakePortal:
         self.password = SYNTH_PASSWORD
         self.session = SYNTH_SESSION
         self.mode = "ok"  # ok | bad_html | http_500 | maintenance
+        self.auth_wall: str | None = None  # captcha | 2fa | bundid — Login-Seite ohne Passwort-Formular
+        self.login_response_wall: str | None = None  # nach POST: weiterer Auth-Schritt ohne Session
         self.login_fail_status = 403  # 403 | 200 — Portal-Fehlermeldung im Body
         self.requests: list[dict] = []
         self.applications = [

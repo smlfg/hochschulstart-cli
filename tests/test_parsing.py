@@ -14,6 +14,7 @@ from hochschulstart_cli.parsing import (
     parse_applications,
     parse_ranglisten,
     parse_termine,
+    unsupported_auth_method,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -68,6 +69,19 @@ def test_parse_unexpected_html_is_parse_error():
 def test_login_error_hint_from_portal_html():
     html = "<html><body><p>Benutzername oder Passwort ist falsch.</p></body></html>"
     assert login_error_hint(html) == "Benutzername oder Passwort ist falsch"
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ('<html><body><div class="g-recaptcha"></div></body></html>', "Captcha"),
+        ("<html><body><h1>Zwei-Faktor-Authentifizierung</h1></body></html>", "2FA"),
+        ("<html><body><h1>Anmeldung mit BundID</h1></body></html>", "BundID"),
+        ("<html><body><form action='/bewerber/login'></form></body></html>", None),
+    ],
+)
+def test_unsupported_auth_method_detection(html, expected):
+    assert unsupported_auth_method(html) == expected
 
 
 def test_extract_form_login_fields():

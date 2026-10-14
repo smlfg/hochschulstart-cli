@@ -72,6 +72,28 @@ def test_login_wrong_password_http_200_exit_2(cli_runner, portal):
     assert "Benutzername oder Passwort ist falsch" in payload["error"]["message"]
 
 
+@pytest.mark.parametrize("wall", ["captcha", "2fa", "bundid"])
+def test_login_unsupported_auth_wall_exit_2(cli_runner, portal, wall):
+    portal.auth_wall = wall
+    proc = cli_runner("login", "--json")
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.AUTH
+    assert "nicht unterstütztes Auth-Verfahren erkannt" in payload["error"]["message"]
+    assert "Zugangsdaten prüfen" not in payload["error"]["message"]
+    posts = [r for r in portal.requests if r["method"] == "POST"]
+    assert posts == [], "bei Auth-Wand darf kein Login-POST erfolgen"
+
+
+def test_login_post_returns_2fa_wall_exit_2(cli_runner, portal):
+    portal.login_response_wall = "2fa"
+    proc = cli_runner("login", "--json")
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert "nicht unterstütztes Auth-Verfahren erkannt" in payload["error"]["message"]
+    assert "2FA" in payload["error"]["message"]
+
+
 def test_network_down_exit_3(cli_runner, portal):
     proc = cli_runner(
         "fristen",
