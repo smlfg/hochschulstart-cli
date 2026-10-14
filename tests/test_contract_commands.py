@@ -22,6 +22,17 @@ def test_login_post_includes_csrf_hidden_field(cli_runner, portal):
     assert "tx_login_token=SYNTH-FORM-TOKEN" in posts[0]["body"]
 
 
+def test_login_dry_run_sends_no_requests(cli_runner, portal):
+    proc = cli_runner("login", "--dry-run", "--json")
+    assert proc.returncode == ec.OK
+    payload = json_out(proc)
+    assert payload["dry_run"] is True
+    assert payload["session_saved"] == "dry-run"
+    assert payload.get("sent") is False
+    assert "benutzername" in payload["request"]["form_fields"]
+    assert not portal.requests, "login --dry-run darf keine HTTP-Requests senden"
+
+
 def test_login_saves_session_without_leaking_secrets(cli_runner, portal):
     payload = _login(cli_runner)
     assert payload["login"] == "ok"
