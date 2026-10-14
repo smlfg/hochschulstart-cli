@@ -34,6 +34,7 @@ from hochschulstart_cli.parsing import (
 )
 from hochschulstart_cli.session import load_session, save_session
 from hochschulstart_cli.state import load_state, save_state
+from hochschulstart_cli.url_util import join_preserve_base_path
 from hochschulstart_cli.validation import require_positive_int
 
 LOGIN_PAGE = "/bewerber"
@@ -200,6 +201,26 @@ def cmd_login(args, json_mode: bool) -> int:
         missing.append("--password-file oder HOCHSCHULSTART_PASSWORD")
     if missing:
         raise CliError("Zugangsdaten fehlen: " + ", ".join(missing), code=ec.AUTH)
+
+    if args.dry_run:
+        fields = _login_form_fields(
+            {"action": LOGIN_FALLBACK_ACTION, "method": "post", "inputs": {}, "hidden": {}},
+            username,
+            password,
+        )
+        target = join_preserve_base_path(cfg.base_url, LOGIN_FALLBACK_ACTION)
+        _emit(
+            {
+                "login": "ok",
+                "username": username,
+                "session_saved": "dry-run",
+                "dry_run": True,
+                "sent": False,
+                "request": {"method": "POST", "url": target, "form_fields": sorted(fields)},
+            },
+            json_mode=json_mode,
+        )
+        return ec.OK
 
     client = _client(cfg, require_session=False)
     page = client.get(LOGIN_PAGE)
