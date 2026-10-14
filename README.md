@@ -131,8 +131,10 @@ und beendet mit Exit 3 statt Unsinn zu parsen.
   sind aus der öffentlichen Struktur abgeleitet; der echte DoSV-Login braucht
   ein registriertes, aktiviertes Konto und ist nicht offline testbar. Bei
   Portalumbau ggf. Pfade in `cli.py` anpassen.
-- Kein Captcha-/2FA-/Bund-ID-Flow; `login` unterstützt den klassischen
-  DoSV-Benutzername/Passwort-Login.
+- Kein Captcha-/2FA-/Bund-ID-Flow; `login` unterstützt nur den klassischen
+  DoSV-Benutzername/Passwort-Login. Wenn das Portal stattdessen Captcha, 2FA
+  oder BundID verlangt, bricht `login` mit Exit **2** und der Meldung
+  „nicht unterstütztes Auth-Verfahren erkannt“ ab (nicht „Zugangsdaten prüfen“).
 - `fristen` liest die öffentliche Terminseite; örtliche Fristen einzelner
   Hochschulen stehen dort nicht.
 
