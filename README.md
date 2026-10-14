@@ -40,6 +40,7 @@ Global: `--json` (genau **ein** JSON-Objekt auf stdout, auch im Fehlerfall),
 Beispiele:
 
 ```bash
+hochschulstart login --dry-run   # zeigt nur den Login-POST, sendet nichts
 hochschulstart login
 hochschulstart status --json
 hochschulstart rangliste --bewerbung B-1001
