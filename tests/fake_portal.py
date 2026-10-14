@@ -156,6 +156,15 @@ class _Handler(BaseHTTPRequestHandler):
             if portal.mode == "bad_html":
                 return self._send(200, BAD_HTML)
             return self._send(200, f"<html><body><h1>Bewerbungsübersicht</h1>{_applications_table(portal.applications)}</body></html>")
+        if path.startswith("/bewerber/bewerbungen/") and path.endswith(("/annehmen", "/absagen")):
+            if not self._session_ok():
+                return self._send(401, LOGIN_HTML)
+            action = path.rsplit("/", 1)[1]
+            app_id = path.split("/")[3]
+            row = next((r for r in portal.applications if r["id"] == app_id), None)
+            if row is None:
+                return self._send(404, "<html><body>nicht gefunden</body></html>")
+            return self._send(200, _decision_confirm_html(app_id, action))
         if path.startswith("/bewerber/bewerbungen/"):
             if not self._session_ok():
                 return self._send(401, LOGIN_HTML)
@@ -175,15 +184,6 @@ class _Handler(BaseHTTPRequestHandler):
                 200,
                 f"<html><body><h1>Bewerbung {app_id}</h1>{_applications_table([row])}{forms}</body></html>",
             )
-        if path.startswith("/bewerber/bewerbungen/") and path.endswith(("/annehmen", "/absagen")):
-            if not self._session_ok():
-                return self._send(401, LOGIN_HTML)
-            action = path.rsplit("/", 1)[1]
-            app_id = path.split("/")[3]
-            row = next((r for r in portal.applications if r["id"] == app_id), None)
-            if row is None:
-                return self._send(404, "<html><body>nicht gefunden</body></html>")
-            return self._send(200, _decision_confirm_html(app_id, action))
         if path == "/bewerber/ranglisten":
             if not self._session_ok():
                 return self._send(401, LOGIN_HTML)
