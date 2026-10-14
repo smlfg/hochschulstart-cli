@@ -23,6 +23,8 @@ from hochschulstart_cli.errors import ArgumentParser, CliError, run_main
 from hochschulstart_cli.http_client import PortalClient
 from hochschulstart_cli.json_util import dumps
 from hochschulstart_cli.parsing import (
+    decision_accepted,
+    decision_error_hint,
     extract_form,
     login_error_hint,
     parse_applications,
@@ -91,6 +93,46 @@ def _check(resp, *, context: str) -> None:
     title_low = resp.text[:2000].lower()
     if "wartung" in title_low and "<title>wartung" in title_low:
         raise CliError("Das DoSV-Bewerbungsportal ist derzeit nicht erreichbar (Wartung).", code=ec.NETWORK)
+
+
+def _form_post_fields(form: dict) -> dict[str, str]:
+    fields: dict[str, str] = dict(form.get("hidden") or {})
+    for name, value in (form.get("inputs") or {}).items():
+        if name in fields:
+            continue
+        if value:
+            fields[name] = value
+    return fields
+
+
+def _resolve_decision_post(
+    client: PortalClient,
+    html: str,
+    action: str,
+    bewerbung_id: str,
+) -> tuple[str, dict[str, str]]:
+    fallback = f"{APPLICATIONS_PATH}/{bewerbung_id}/{action}"
+    try:
+        form = extract_form(html, action_contains=action)
+    except CliError:
+        form = {"action": fallback, "method": "post", "inputs": {}, "hidden": {}}
+    target = form.get("action") or fallback
+    method = (form.get("method") or "post").lower()
+    if method == "get":
+        resp = client.get(target)
+        _check(resp, context=f"{action} {bewerbung_id} (Bestätigung)")
+        try:
+            form = extract_form(resp.text, action_contains=action)
+        except CliError:
+            form = extract_form(resp.text)
+        target = form.get("action") or target
+        method = (form.get("method") or "post").lower()
+    if method != "post":
+        raise CliError(
+            f"{action} {bewerbung_id}: Bestätigungsformular erwartet POST, bekam {method!r}",
+            code=ec.PARSE,
+        )
+    return target, _form_post_fields(form)
 
 
 def _login_form_fields(form: dict, username: str, password: str) -> dict[str, str]:
@@ -337,12 +379,7 @@ def _decide(action: str, args, json_mode: bool) -> int:
             f"Bewerbung {args.bewerbung_id} hat kein Zulassungsangebot (Status: {status}) — annehmen nicht möglich",
             code=ec.INPUT,
         )
-    try:
-        form = extract_form(html, action_contains=action)
-    except CliError:
-        form = {"action": f"{APPLICATIONS_PATH}/{args.bewerbung_id}/{action}", "method": "post", "inputs": {}}
-    target = form.get("action") or f"{APPLICATIONS_PATH}/{args.bewerbung_id}/{action}"
-    fields = {k: v for k, v in (form.get("hidden") or {}).items()}
+    target, fields = _resolve_decision_post(client, html, action, args.bewerbung_id)
     if args.dry_run:
         _emit(
             {
@@ -356,9 +393,15 @@ def _decide(action: str, args, json_mode: bool) -> int:
         )
         return ec.OK
     resp = client.post_form(target, fields)
+    if resp.status >= 400:
+        hint = decision_error_hint(resp.text) or f"HTTP {resp.status}"
+        code = ec.INPUT if resp.status < 500 else ec.NETWORK
+        raise CliError(f"{action} {args.bewerbung_id}: {hint}", code=code)
     _check(resp, context=f"{action} {args.bewerbung_id}")
-    low = resp.text.lower()
-    if any(marker in low for marker in ("fehlgeschlagen", "nicht möglich", "ungültig")):
+    hint = decision_error_hint(resp.text)
+    if hint:
+        raise CliError(f"{action} {args.bewerbung_id}: {hint}", code=ec.INPUT)
+    if not decision_accepted(resp.text, action):
         raise CliError(f"{action} {args.bewerbung_id} wurde von der Plattform abgelehnt", code=ec.INPUT)
     _emit(
         {

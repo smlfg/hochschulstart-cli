@@ -233,6 +233,32 @@ def unsupported_auth_method(html: str) -> str | None:
     return None
 
 
+def decision_error_hint(html: str) -> str | None:
+    """Fehlertexte aus Bestätigungs-/Entscheidungsantworten des Portals."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html))
+    low = text.lower()
+    if "formular-token" in low or ("ungültig" in low and "token" in low):
+        return "Sitzung abgelaufen oder ungültiges Formular-Token — Bewerbung erneut laden"
+    if "bestätigung fehlt" in low:
+        return "Bestätigung im Portal nicht vollständig — Dialog erneut öffnen"
+    if "bereits angenommen" in low or "bereits abgesagt" in low:
+        return text[:200]
+    if any(m in low for m in ("fehlgeschlagen", "nicht möglich", "abgelehnt")):
+        return text[:200] if text else "Aktion vom Portal abgelehnt"
+    return None
+
+
+def decision_accepted(html: str, action: str) -> bool:
+    """True wenn die Portal-Antwort eine erfolgreiche Annahme/Absage anzeigt."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html))
+    low = text.lower()
+    if decision_error_hint(html):
+        return False
+    if action == "annehmen":
+        return any(m in low for m in ("angenommen", "erfolgreich", "verbindlich"))
+    return any(m in low for m in ("abgesagt", "zurückgezogen", "erfolgreich", "verbindlich"))
+
+
 def login_error_hint(html: str) -> str | None:
     """Bekannte Login-Fehlertexte aus der Portal-Antwort (ohne Credentials)."""
     text = _clean(re.sub(r"<[^>]+>", " ", html))
