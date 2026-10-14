@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 SYNTH_USERNAME = "testuser"
 SYNTH_PASSWORD = "testpass"
 SYNTH_SESSION = "SYNTH-SESSION-0001"
-SYNTH_CSRF = "SYNTH-CSRF-0001"
+SYNTH_DECISION_TOKEN = "SYNTH-DECISION-TOKEN"
 
 AUTH_CAPTCHA_HTML = """<!DOCTYPE html><html lang="de"><head><title>Sicherheitsabfrage</title></head>
 <body><h1>Sicherheitsabfrage</h1><p>Bitte bestätigen Sie das Captcha.</p><div class="g-recaptcha"></div></body></html>"""
@@ -47,6 +47,20 @@ MAINTENANCE_HTML = """<!DOCTYPE html><html lang="de"><head><title>Wartung</title
 <body><h1>Das Bewerbungsportal ist wegen Wartung vorübergehend nicht erreichbar.</h1></body></html>"""
 
 BAD_HTML = "<html><body><p>unerwartete Struktur ohne Tabellen</p></body></html>"
+
+
+def _decision_confirm_html(app_id: str, action: str) -> str:
+    verb = "annehmen" if action == "annehmen" else "absagen"
+    label = "Ja, verbindlich annehmen" if action == "annehmen" else "Ja, verbindlich absagen"
+    return f"""<!DOCTYPE html><html lang="de"><head><title>Bestätigung</title></head><body>
+<h1>Bestätigung</h1>
+<p>Möchten Sie diese Aktion wirklich verbindlich {verb}?</p>
+<form action="/bewerber/bewerbungen/{app_id}/{action}" method="post">
+<input type="hidden" name="tx_bewerbung_token" value="{SYNTH_DECISION_TOKEN}">
+<input type="hidden" name="__referrer" value="[@bewerbung]">
+<input type="submit" name="confirmed" value="{label}">
+</form>
+</body></html>"""
 
 TERMINE_ROWS = [
     ("26.10.2026", "Start der Bewerbungsphase (09:00 Uhr)", "Start für die bundesweit zulassungsbeschränkten Studiengänge."),
@@ -152,15 +166,24 @@ class _Handler(BaseHTTPRequestHandler):
             if row is None:
                 return self._send(404, "<html><body>nicht gefunden</body></html>")
             forms = (
-                f"<form action='/bewerber/bewerbungen/{app_id}/annehmen' method='post'>"
-                f"<input type='hidden' name='csrf_token' value='{SYNTH_CSRF}'></form>"
-                f"<form action='/bewerber/bewerbungen/{app_id}/absagen' method='post'>"
-                f"<input type='hidden' name='csrf_token' value='{SYNTH_CSRF}'></form>"
+                f"<form action='/bewerber/bewerbungen/{app_id}/annehmen' method='get'>"
+                f"<input type='submit' value='Zulassungsangebot annehmen'></form>"
+                f"<form action='/bewerber/bewerbungen/{app_id}/absagen' method='get'>"
+                f"<input type='submit' value='Bewerbung absagen'></form>"
             )
             return self._send(
                 200,
                 f"<html><body><h1>Bewerbung {app_id}</h1>{_applications_table([row])}{forms}</body></html>",
             )
+        if path.startswith("/bewerber/bewerbungen/") and path.endswith(("/annehmen", "/absagen")):
+            if not self._session_ok():
+                return self._send(401, LOGIN_HTML)
+            action = path.rsplit("/", 1)[1]
+            app_id = path.split("/")[3]
+            row = next((r for r in portal.applications if r["id"] == app_id), None)
+            if row is None:
+                return self._send(404, "<html><body>nicht gefunden</body></html>")
+            return self._send(200, _decision_confirm_html(app_id, action))
         if path == "/bewerber/ranglisten":
             if not self._session_ok():
                 return self._send(401, LOGIN_HTML)
@@ -197,13 +220,19 @@ class _Handler(BaseHTTPRequestHandler):
             app_id = path.split("/")[3]
             if not self._session_ok():
                 return self._send(401, LOGIN_HTML)
-            if fields.get("csrf_token") != SYNTH_CSRF:
+            if fields.get("tx_bewerbung_token") != SYNTH_DECISION_TOKEN:
                 return self._send(400, "<html><body>Ungültiges Formular-Token</body></html>")
+            if not fields.get("confirmed"):
+                return self._send(400, "<html><body>Bestätigung fehlt</body></html>")
             row = next((r for r in portal.applications if r["id"] == app_id), None)
             if row is None:
                 return self._send(404, "<html><body>nicht gefunden</body></html>")
             row["status"] = "Angenommen" if action == "annehmen" else "Abgesagt"
-            return self._send(200, f"<html><body>{action} erfolgreich für {app_id}</body></html>")
+            if action == "annehmen":
+                msg = f"Das Zulassungsangebot für {app_id} wurde verbindlich angenommen."
+            else:
+                msg = f"Die Bewerbung {app_id} wurde verbindlich abgesagt."
+            return self._send(200, f"<html><body><p>{msg}</p></body></html>")
         if path == "/bewerber/annehmen-abort":
             return self._send(200, LOGIN_HTML)
         return self._send(404, "<html><body>nicht gefunden</body></html>")

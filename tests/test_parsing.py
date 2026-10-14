@@ -97,3 +97,16 @@ def test_extract_form_missing_action_is_parse_error():
     with pytest.raises(CliError) as e:
         extract_form(_read("login.html"), action_contains="annehmen")
     assert e.value.code == ec.PARSE
+
+
+def test_extract_form_detail_starts_annehmen_with_get():
+    form = extract_form(_read("bewerbung_detail_dosv.html"), action_contains="annehmen")
+    assert form["action"] == "/bewerber/bewerbungen/B-2001/annehmen"
+    assert form["method"] == "get"
+
+
+def test_extract_form_confirm_dialog_posts_token_and_submit():
+    form = extract_form(_read("bewerbung_annehmen_confirm_dosv.html"), action_contains="annehmen")
+    assert form["method"] == "post"
+    assert form["hidden"]["tx_bewerbung_token"] == "SYNTH-DECISION-TOKEN"
+    assert form["inputs"]["confirmed"] == "Ja, verbindlich annehmen"

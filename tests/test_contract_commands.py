@@ -123,9 +123,12 @@ def test_annehmen_confirm_sends_post_and_updates_status(cli_runner, portal):
     payload = json_out(proc)
     assert payload["sent"] is True and payload["action"] == "annehmen"
     assert portal.applications[0]["status"] == "Angenommen"
+    gets = [r for r in portal.requests if r["method"] == "GET" and r["path"].endswith("/annehmen")]
     posts = [r for r in portal.requests if r["method"] == "POST" and r["path"].endswith("/annehmen")]
+    assert len(gets) == 1, "Portal zeigt erst einen Bestätigungsdialog (GET)"
     assert len(posts) == 1
-    assert "csrf_token" in posts[0]["body"]
+    assert "tx_bewerbung_token=SYNTH-DECISION-TOKEN" in posts[0]["body"]
+    assert "confirmed=" in posts[0]["body"]
 
 
 def test_absagen_confirm_sends_post(cli_runner, portal):
@@ -141,7 +144,7 @@ def test_annehmen_dry_run_sends_no_post(cli_runner, portal):
     assert proc.returncode == ec.OK
     payload = json_out(proc)
     assert payload["sent"] is False
-    assert "csrf_token" in payload["request"]["form_fields"]
+    assert "tx_bewerbung_token" in payload["request"]["form_fields"]
     assert portal.applications[0]["status"] == "Zulassungsangebot", "dry-run darf nichts senden"
     assert not [r for r in portal.requests if r["method"] == "POST" and r["path"].endswith("/annehmen")]
 
@@ -154,6 +157,20 @@ def test_annehmen_without_offer_exit_1(cli_runner, portal):
     assert "kein Zulassungsangebot" in payload["error"]["message"]
     assert not [r for r in portal.requests if r["method"] == "POST" and r["path"].endswith("/annehmen")]
     assert portal.applications[1]["status"] == "Bewerbung eingegangen"
+
+
+def test_annehmen_invalid_token_exit_1(cli_runner, portal, monkeypatch):
+    from fake_portal import SYNTH_DECISION_TOKEN, _decision_confirm_html
+
+    _login(cli_runner)
+
+    def bad_confirm(app_id: str, action: str) -> str:
+        return _decision_confirm_html(app_id, action).replace(SYNTH_DECISION_TOKEN, "BAD-TOKEN")
+
+    monkeypatch.setattr("fake_portal._decision_confirm_html", bad_confirm)
+    proc = cli_runner("annehmen", "B-1001", "--confirm", "--json")
+    assert proc.returncode == ec.INPUT
+    assert "Formular-Token" in json_out(proc)["error"]["message"]
 
 
 def test_annehmen_already_accepted_exit_1(cli_runner, portal):
