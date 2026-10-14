@@ -160,6 +160,23 @@ def test_annehmen_dry_run_sends_no_post(cli_runner, portal):
     assert not [r for r in portal.requests if r["method"] == "POST" and r["path"].endswith("/annehmen")]
 
 
+def test_annehmen_empty_id_no_http(cli_runner, portal):
+    _login(cli_runner)
+    portal.requests.clear()
+    proc = cli_runner("annehmen", "", "--confirm", "--json")
+    assert proc.returncode == ec.INPUT
+    assert "leer" in json_out(proc)["error"]["message"].lower()
+    assert portal.requests == []
+
+
+def test_annehmen_path_traversal_id_no_http(cli_runner, portal):
+    _login(cli_runner)
+    portal.requests.clear()
+    proc = cli_runner("annehmen", "../B-1002", "--confirm", "--json")
+    assert proc.returncode == ec.INPUT
+    assert portal.requests == []
+
+
 def test_annehmen_without_offer_exit_1(cli_runner, portal):
     _login(cli_runner)
     proc = cli_runner("annehmen", "B-1002", "--confirm", "--json")
