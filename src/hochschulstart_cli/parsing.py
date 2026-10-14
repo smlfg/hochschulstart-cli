@@ -210,6 +210,21 @@ def parse_termine(html: str) -> list[dict[str, str]]:
     return out
 
 
+def login_error_hint(html: str) -> str | None:
+    """Bekannte Login-Fehlertexte aus der Portal-Antwort (ohne Credentials)."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html))
+    low = text.lower()
+    if "benutzername oder passwort" in low and "falsch" in low:
+        return "Benutzername oder Passwort ist falsch"
+    if "ungültig" in low and "passwort" in low:
+        return "Zugangsdaten ungültig"
+    if "konto" in low and "aktivier" in low:
+        return "Konto ist noch nicht aktiviert"
+    if "csrf" in low or "formular-token" in low or ("sicherheits" in low and "token" in low):
+        return "Sitzung abgelaufen oder ungültiges Formular-Token — Login-Seite erneut laden"
+    return None
+
+
 def extract_form(html: str, *, action_contains: str | None = None) -> dict:
     """Formular (action, method, inputs) finden; optional per action-Teilstring."""
     forms = _parse(html).forms

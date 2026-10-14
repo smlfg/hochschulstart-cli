@@ -24,6 +24,7 @@ from hochschulstart_cli.http_client import PortalClient
 from hochschulstart_cli.json_util import dumps
 from hochschulstart_cli.parsing import (
     extract_form,
+    login_error_hint,
     parse_applications,
     parse_ranglisten,
     parse_termine,
@@ -159,10 +160,9 @@ def cmd_login(args, json_mode: bool) -> int:
     fields = _login_form_fields(form, username, password)
     resp = client.post_form(action, fields)
     if resp.status in (401, 403) or not client.session_cookie:
-        raise CliError(
-            "Login fehlgeschlagen: Zugangsdaten prüfen (Hinweis: Konto muss aktiviert sein)",
-            code=ec.AUTH,
-        )
+        hint = login_error_hint(resp.text) or login_error_hint(page.text)
+        detail = f" ({hint})" if hint else " (Hinweis: Konto muss aktiviert sein)"
+        raise CliError(f"Login fehlgeschlagen: Zugangsdaten prüfen{detail}", code=ec.AUTH)
     _check(resp, context="Login")
     saved = save_session(client.session_cookie, dry_run=args.dry_run)
     _emit(

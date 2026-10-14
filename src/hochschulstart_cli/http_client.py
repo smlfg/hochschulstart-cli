@@ -28,6 +28,14 @@ _HEADERS = {
 SESSION_COOKIE_NAME = "JSESSIONID"
 
 
+def maintenance_redirect(initial_url: str, final_url: str) -> bool:
+    """True wenn ein Request auf eine Wartungs-Host-URL umgeleitet wurde."""
+    if initial_url == final_url:
+        return False
+    netloc = urllib.parse.urlsplit(final_url).netloc.lower()
+    return "wartung" in netloc
+
+
 @dataclass
 class HttpResponse:
     status: int
@@ -92,7 +100,7 @@ class PortalClient:
         self._capture_cookie(resp_headers.get("Set-Cookie", ""))
 
         text = body.decode("utf-8", errors="replace")
-        if final_url != url and "wartung" in urllib.parse.urlsplit(final_url).netloc.lower():
+        if maintenance_redirect(url, final_url):
             raise CliError(
                 "Das DoSV-Bewerbungsportal ist derzeit nicht erreichbar (Wartung).",
                 code=ec.NETWORK,
