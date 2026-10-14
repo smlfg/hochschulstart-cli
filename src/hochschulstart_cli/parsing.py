@@ -210,6 +210,29 @@ def parse_termine(html: str) -> list[dict[str, str]]:
     return out
 
 
+def unsupported_auth_method(html: str) -> str | None:
+    """Captcha, 2FA oder BundID — nicht per Benutzername/Passwort automatisierbar."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html)).lower()
+    blob = f"{text} {html.lower()}"
+    if re.search(r"bund[\s-]?id", blob) or "bundesident" in blob:
+        return "BundID"
+    if any(
+        token in blob
+        for token in ("captcha", "recaptcha", "hcaptcha", "turnstile", "g-recaptcha", "h-captcha")
+    ):
+        return "Captcha"
+    if (
+        re.search(r"\b2fa\b", blob)
+        or "zwei-faktor" in blob
+        or "zweifaktor" in blob
+        or "two-factor" in blob
+        or "einmalpasswort" in blob
+        or ("authenticator" in blob and "code" in blob)
+    ):
+        return "2FA"
+    return None
+
+
 def login_error_hint(html: str) -> str | None:
     """Bekannte Login-Fehlertexte aus der Portal-Antwort (ohne Credentials)."""
     text = _clean(re.sub(r"<[^>]+>", " ", html))

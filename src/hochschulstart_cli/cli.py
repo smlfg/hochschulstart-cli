@@ -28,6 +28,7 @@ from hochschulstart_cli.parsing import (
     parse_applications,
     parse_ranglisten,
     parse_termine,
+    unsupported_auth_method,
 )
 from hochschulstart_cli.session import load_session, save_session
 from hochschulstart_cli.state import load_state, save_state
@@ -69,6 +70,15 @@ def _client(cfg: ResolvedConfig, *, require_session: bool = True) -> PortalClien
                 code=ec.AUTH,
             )
     return PortalClient(cfg.base_url, session_cookie=cookie)
+
+
+def _reject_unsupported_auth(html: str) -> None:
+    method = unsupported_auth_method(html)
+    if method:
+        raise CliError(
+            f"nicht unterstütztes Auth-Verfahren erkannt ({method})",
+            code=ec.AUTH,
+        )
 
 
 def _check(resp, *, context: str) -> None:
@@ -152,6 +162,7 @@ def cmd_login(args, json_mode: bool) -> int:
     client = _client(cfg, require_session=False)
     page = client.get(LOGIN_PAGE)
     _check(page, context="Login-Seite")
+    _reject_unsupported_auth(page.text)
     try:
         form = extract_form(page.text, action_contains="login")
     except CliError:
@@ -160,6 +171,7 @@ def cmd_login(args, json_mode: bool) -> int:
     fields = _login_form_fields(form, username, password)
     resp = client.post_form(action, fields)
     if resp.status in (401, 403) or not client.session_cookie:
+        _reject_unsupported_auth(resp.text)
         hint = login_error_hint(resp.text) or login_error_hint(page.text)
         detail = f" ({hint})" if hint else " (Hinweis: Konto muss aktiviert sein)"
         raise CliError(f"Login fehlgeschlagen: Zugangsdaten prüfen{detail}", code=ec.AUTH)
