@@ -35,7 +35,7 @@ from hochschulstart_cli.parsing import (
 from hochschulstart_cli.session import load_session, save_session
 from hochschulstart_cli.state import load_state, save_state
 from hochschulstart_cli.url_util import join_preserve_base_path
-from hochschulstart_cli.validation import require_positive_int
+from hochschulstart_cli.validation import require_application_id, require_positive_int
 
 LOGIN_PAGE = "/bewerber"
 APPLICATIONS_PATH = "/bewerber/bewerbungen"
@@ -385,6 +385,7 @@ def _detail(client: PortalClient, bewerbung_id: str) -> tuple[dict, str | None]:
 
 
 def _decide(action: str, args, json_mode: bool) -> int:
+    require_application_id(args.bewerbung_id)
     if not args.confirm:
         raise CliError(
             f"{action} sendet nichts ohne --confirm: '{action} {args.bewerbung_id} --confirm' verwenden",
