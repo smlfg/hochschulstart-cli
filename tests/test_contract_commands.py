@@ -15,6 +15,13 @@ def _login(cli_runner):
     return json_out(proc)
 
 
+def test_login_post_includes_csrf_hidden_field(cli_runner, portal):
+    assert cli_runner("login", "--json").returncode == ec.OK
+    posts = [r for r in portal.requests if r["method"] == "POST" and r["path"] == "/bewerber/login"]
+    assert len(posts) == 1
+    assert "tx_login_token=SYNTH-FORM-TOKEN" in posts[0]["body"]
+
+
 def test_login_saves_session_without_leaking_secrets(cli_runner, portal):
     payload = _login(cli_runner)
     assert payload["login"] == "ok"

@@ -59,8 +59,17 @@ def test_login_wrong_password_exit_2(cli_runner, portal):
     assert proc.returncode == ec.AUTH
     payload = json_out(proc)
     assert payload["error"]["code"] == ec.AUTH
+    assert "Benutzername oder Passwort ist falsch" in payload["error"]["message"]
     assert "testpass" not in proc.stdout + proc.stderr
-    assert "falsch" not in proc.stdout + proc.stderr
+    assert "testuser" not in proc.stdout + proc.stderr
+
+
+def test_login_wrong_password_http_200_exit_2(cli_runner, portal):
+    portal.login_fail_status = 200
+    proc = cli_runner("login", "--json", env_extra={"HOCHSCHULSTART_PASSWORD": "falsch"})
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert "Benutzername oder Passwort ist falsch" in payload["error"]["message"]
 
 
 def test_network_down_exit_3(cli_runner, portal):

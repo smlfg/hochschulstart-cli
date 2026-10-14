@@ -10,6 +10,7 @@ from hochschulstart_cli import exit_codes as ec
 from hochschulstart_cli.errors import CliError
 from hochschulstart_cli.parsing import (
     extract_form,
+    login_error_hint,
     parse_applications,
     parse_ranglisten,
     parse_termine,
@@ -46,6 +47,14 @@ def test_parse_termine_fields():
     assert "Bewerbungsphase" in termine[0]["title"]
 
 
+def test_parse_termine_live_snapshot_2026_10_14():
+    """Tabellenstruktur von www.hochschulstart.de (14.10.2026, read-only curl)."""
+    termine = parse_termine(_read("termine_live_2026-10-14.html"))
+    assert len(termine) >= 70
+    assert termine[0]["date"] == "26.10.2026"
+    assert "Bewerbungsphase" in termine[0]["title"]
+
+
 def test_parse_unexpected_html_is_parse_error():
     with pytest.raises(CliError) as e:
         parse_applications(_read("unexpected.html"))
@@ -54,6 +63,11 @@ def test_parse_unexpected_html_is_parse_error():
         parse_ranglisten(_read("unexpected.html"))
     with pytest.raises(CliError):
         parse_termine(_read("unexpected.html"))
+
+
+def test_login_error_hint_from_portal_html():
+    html = "<html><body><p>Benutzername oder Passwort ist falsch.</p></body></html>"
+    assert login_error_hint(html) == "Benutzername oder Passwort ist falsch"
 
 
 def test_extract_form_login_fields():

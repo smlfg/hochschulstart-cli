@@ -164,6 +164,14 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/bewerber/login":
             if fields.get("benutzername") == portal.username and fields.get("passwort") == portal.password:
                 return self._send(200, "<html><body>Angemeldet</body></html>", cookie=portal.session)
+            fail_body = (
+                LOGIN_HTML.replace(
+                    "</form>",
+                    "<p>Benutzername oder Passwort ist falsch.</p></form>",
+                )
+            )
+            if portal.login_fail_status == 200:
+                return self._send(200, fail_body)
             return self._send(403, "<html><body>Benutzername oder Passwort ist falsch</body></html>")
         if path.startswith("/bewerber/bewerbungen/") and path.endswith(("/annehmen", "/absagen")):
             action = path.rsplit("/", 1)[1]
@@ -188,6 +196,7 @@ class FakePortal:
         self.password = SYNTH_PASSWORD
         self.session = SYNTH_SESSION
         self.mode = "ok"  # ok | bad_html | http_500 | maintenance
+        self.login_fail_status = 403  # 403 | 200 — Portal-Fehlermeldung im Body
         self.requests: list[dict] = []
         self.applications = [
             {
