@@ -125,6 +125,24 @@ def test_watch_unwritable_state_exit_4_no_traceback(cli_runner, portal, tmp_path
     assert "cannot write state" in payload["error"]["message"]
 
 
+def test_watch_schema_invalid_applications_exit_4_no_traceback(cli_runner, portal, tmp_path):
+    state = tmp_path / "watch.json"
+    state.write_text('{"applications": [1, 2], "ranglisten": {}}', encoding="utf-8")
+    proc = cli_runner(
+        "watch",
+        "--json",
+        "--state",
+        str(state),
+        env_extra={"HOCHSCHULSTART_SESSION": "SYNTH-SESSION-0001"},
+    )
+    assert proc.returncode == ec.PARSE
+    assert "Traceback" not in proc.stderr
+    payload = json_out(proc)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ec.PARSE
+    assert "applications" in payload["error"]["message"]
+
+
 def test_login_unwritable_session_dir_exit_4_no_traceback(cli_runner, portal, tmp_path):
     ro = tmp_path / "xdg"
     ro.mkdir()
