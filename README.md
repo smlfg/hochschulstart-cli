@@ -22,7 +22,8 @@ Alternativ: `pip install -e ".[dev]"`. Optionale keyring-Ablage:
 
 ## Kommandos
 
-Global: `--json` (genau **ein** JSON-Objekt auf stdout, auch im Fehlerfall),
+Global (jeweils direkt **nach** dem Unterkommando, z. B. `status --json`):
+`--json` (genau **ein** JSON-Objekt auf stdout, auch im Fehlerfall),
 `--dry-run` (nichts senden/schreiben, nur zeigen).
 
 | Kommando | Zweck |
