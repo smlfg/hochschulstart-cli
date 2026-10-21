@@ -35,6 +35,15 @@ def test_empty_file_is_parse_error(tmp_path: Path):
         load_state(p)
 
 
+def test_load_state_rejects_applications_list(tmp_path: Path):
+    p = tmp_path / "bad.json"
+    p.write_text('{"applications": [1, 2], "ranglisten": {}}', encoding="utf-8")
+    with pytest.raises(CliError) as exc_info:
+        load_state(p)
+    assert exc_info.value.code == ec.PARSE
+    assert "applications" in str(exc_info.value)
+
+
 def test_save_state_unwritable_dir_raises_cli_error(tmp_path: Path):
     ro = tmp_path / "ro"
     ro.mkdir()

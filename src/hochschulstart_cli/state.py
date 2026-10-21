@@ -32,7 +32,31 @@ def load_state(path: Path) -> dict[str, Any] | None:
         raise CliError(f"state must be a JSON object, got null: {path}", code=ec.PARSE)
     if not isinstance(data, dict):
         raise CliError(f"state must be a JSON object: {path}", code=ec.PARSE)
+    _validate_watch_state_shape(data, path)
     return data
+
+
+def _validate_watch_state_shape(data: dict[str, Any], path: Path) -> None:
+    """Reject watch state files whose nested fields have the wrong JSON types."""
+    apps = data.get("applications")
+    if apps is not None and not isinstance(apps, dict):
+        raise CliError(
+            f"state field 'applications' must be a JSON object: {path}",
+            code=ec.PARSE,
+        )
+    if isinstance(apps, dict):
+        for key, entry in apps.items():
+            if entry is not None and not isinstance(entry, dict):
+                raise CliError(
+                    f"state applications[{key!r}] must be a JSON object or null: {path}",
+                    code=ec.PARSE,
+                )
+    ranglisten = data.get("ranglisten")
+    if ranglisten is not None and not isinstance(ranglisten, dict):
+        raise CliError(
+            f"state field 'ranglisten' must be a JSON object: {path}",
+            code=ec.PARSE,
+        )
 
 
 def save_state(path: Path, data: dict[str, Any], *, dry_run: bool = False) -> None:
