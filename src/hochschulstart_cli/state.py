@@ -43,16 +43,18 @@ def save_state(path: Path, data: dict[str, Any], *, dry_run: bool = False) -> No
         raise CliError("state must be a JSON object", code=ec.INPUT)
     if dry_run:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = dumps(data, indent=2) + "\n"
-    fd, tmp_name = tempfile.mkstemp(prefix=".state-", suffix=".tmp", dir=path.parent)
-    tmp = Path(tmp_name)
+    tmp: Path | None = None
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=".state-", suffix=".tmp", dir=path.parent)
+        tmp = Path(tmp_name)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
         tmp.replace(path)
     except OSError as e:
-        tmp.unlink(missing_ok=True)
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
         raise CliError(f"cannot write state: {path}", code=ec.PARSE, details={"reason": str(e)}) from e
