@@ -210,6 +210,70 @@ def parse_termine(html: str) -> list[dict[str, str]]:
     return out
 
 
+def unsupported_auth_method(html: str) -> str | None:
+    """Captcha, 2FA oder BundID — nicht per Benutzername/Passwort automatisierbar."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html)).lower()
+    blob = f"{text} {html.lower()}"
+    if re.search(r"bund[\s-]?id", blob) or "bundesident" in blob:
+        return "BundID"
+    if any(
+        token in blob
+        for token in ("captcha", "recaptcha", "hcaptcha", "turnstile", "g-recaptcha", "h-captcha")
+    ):
+        return "Captcha"
+    if (
+        re.search(r"\b2fa\b", blob)
+        or "zwei-faktor" in blob
+        or "zweifaktor" in blob
+        or "two-factor" in blob
+        or "einmalpasswort" in blob
+        or ("authenticator" in blob and "code" in blob)
+    ):
+        return "2FA"
+    return None
+
+
+def decision_error_hint(html: str) -> str | None:
+    """Fehlertexte aus Bestätigungs-/Entscheidungsantworten des Portals."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html))
+    low = text.lower()
+    if "formular-token" in low or ("ungültig" in low and "token" in low):
+        return "Sitzung abgelaufen oder ungültiges Formular-Token — Bewerbung erneut laden"
+    if "bestätigung fehlt" in low:
+        return "Bestätigung im Portal nicht vollständig — Dialog erneut öffnen"
+    if "bereits angenommen" in low or "bereits abgesagt" in low:
+        return text[:200]
+    if any(m in low for m in ("fehlgeschlagen", "nicht möglich", "abgelehnt")):
+        return text[:200] if text else "Aktion vom Portal abgelehnt"
+    return None
+
+
+def decision_accepted(html: str, action: str) -> bool:
+    """True wenn die Portal-Antwort eine erfolgreiche Annahme/Absage anzeigt."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html))
+    low = text.lower()
+    if decision_error_hint(html):
+        return False
+    if action == "annehmen":
+        return any(m in low for m in ("angenommen", "erfolgreich", "verbindlich"))
+    return any(m in low for m in ("abgesagt", "zurückgezogen", "erfolgreich", "verbindlich"))
+
+
+def login_error_hint(html: str) -> str | None:
+    """Bekannte Login-Fehlertexte aus der Portal-Antwort (ohne Credentials)."""
+    text = _clean(re.sub(r"<[^>]+>", " ", html))
+    low = text.lower()
+    if "benutzername oder passwort" in low and "falsch" in low:
+        return "Benutzername oder Passwort ist falsch"
+    if "ungültig" in low and "passwort" in low:
+        return "Zugangsdaten ungültig"
+    if "konto" in low and "aktivier" in low:
+        return "Konto ist noch nicht aktiviert"
+    if "csrf" in low or "formular-token" in low or ("sicherheits" in low and "token" in low):
+        return "Sitzung abgelaufen oder ungültiges Formular-Token — Login-Seite erneut laden"
+    return None
+
+
 def extract_form(html: str, *, action_contains: str | None = None) -> dict:
     """Formular (action, method, inputs) finden; optional per action-Teilstring."""
     forms = _parse(html).forms

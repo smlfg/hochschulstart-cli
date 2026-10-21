@@ -15,7 +15,22 @@ from urllib.parse import parse_qs, urlparse
 SYNTH_USERNAME = "testuser"
 SYNTH_PASSWORD = "testpass"
 SYNTH_SESSION = "SYNTH-SESSION-0001"
-SYNTH_CSRF = "SYNTH-CSRF-0001"
+SYNTH_DECISION_TOKEN = "SYNTH-DECISION-TOKEN"
+
+AUTH_CAPTCHA_HTML = """<!DOCTYPE html><html lang="de"><head><title>Sicherheitsabfrage</title></head>
+<body><h1>Sicherheitsabfrage</h1><p>Bitte bestätigen Sie das Captcha.</p><div class="g-recaptcha"></div></body></html>"""
+
+AUTH_2FA_HTML = """<!DOCTYPE html><html lang="de"><head><title>2FA</title></head>
+<body><h1>Zwei-Faktor-Authentifizierung</h1><p>Authenticator-Code eingeben.</p></body></html>"""
+
+AUTH_BUNDID_HTML = """<!DOCTYPE html><html lang="de"><head><title>BundID</title></head>
+<body><h1>Anmeldung mit BundID</h1><p>Weiter mit Ihrer BundID.</p></body></html>"""
+
+_AUTH_WALL_HTML = {
+    "captcha": AUTH_CAPTCHA_HTML,
+    "2fa": AUTH_2FA_HTML,
+    "bundid": AUTH_BUNDID_HTML,
+}
 
 LOGIN_HTML = """<!DOCTYPE html><html lang="de"><head><title>Bewerbungsportal Anmeldung</title></head>
 <body>
@@ -32,6 +47,20 @@ MAINTENANCE_HTML = """<!DOCTYPE html><html lang="de"><head><title>Wartung</title
 <body><h1>Das Bewerbungsportal ist wegen Wartung vorübergehend nicht erreichbar.</h1></body></html>"""
 
 BAD_HTML = "<html><body><p>unerwartete Struktur ohne Tabellen</p></body></html>"
+
+
+def _decision_confirm_html(app_id: str, action: str) -> str:
+    verb = "annehmen" if action == "annehmen" else "absagen"
+    label = "Ja, verbindlich annehmen" if action == "annehmen" else "Ja, verbindlich absagen"
+    return f"""<!DOCTYPE html><html lang="de"><head><title>Bestätigung</title></head><body>
+<h1>Bestätigung</h1>
+<p>Möchten Sie diese Aktion wirklich verbindlich {verb}?</p>
+<form action="/bewerber/bewerbungen/{app_id}/{action}" method="post">
+<input type="hidden" name="tx_bewerbung_token" value="{SYNTH_DECISION_TOKEN}">
+<input type="hidden" name="__referrer" value="[@bewerbung]">
+<input type="submit" name="confirmed" value="{label}">
+</form>
+</body></html>"""
 
 TERMINE_ROWS = [
     ("26.10.2026", "Start der Bewerbungsphase (09:00 Uhr)", "Start für die bundesweit zulassungsbeschränkten Studiengänge."),
@@ -116,6 +145,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(500, "<html><body>Serverfehler</body></html>")
 
         if path in ("/bewerber", "/bewerber/"):
+            if portal.auth_wall in _AUTH_WALL_HTML:
+                return self._send(200, _AUTH_WALL_HTML[portal.auth_wall])
             return self._send(200, LOGIN_HTML)
         if path == "/terminuebersicht":
             return self._send(200, f"<html><body>{_termine_table(TERMINE_ROWS)}</body></html>")
@@ -125,6 +156,15 @@ class _Handler(BaseHTTPRequestHandler):
             if portal.mode == "bad_html":
                 return self._send(200, BAD_HTML)
             return self._send(200, f"<html><body><h1>Bewerbungsübersicht</h1>{_applications_table(portal.applications)}</body></html>")
+        if path.startswith("/bewerber/bewerbungen/") and path.endswith(("/annehmen", "/absagen")):
+            if not self._session_ok():
+                return self._send(401, LOGIN_HTML)
+            action = path.rsplit("/", 1)[1]
+            app_id = path.split("/")[3]
+            row = next((r for r in portal.applications if r["id"] == app_id), None)
+            if row is None:
+                return self._send(404, "<html><body>nicht gefunden</body></html>")
+            return self._send(200, _decision_confirm_html(app_id, action))
         if path.startswith("/bewerber/bewerbungen/"):
             if not self._session_ok():
                 return self._send(401, LOGIN_HTML)
@@ -135,10 +175,10 @@ class _Handler(BaseHTTPRequestHandler):
             if row is None:
                 return self._send(404, "<html><body>nicht gefunden</body></html>")
             forms = (
-                f"<form action='/bewerber/bewerbungen/{app_id}/annehmen' method='post'>"
-                f"<input type='hidden' name='csrf_token' value='{SYNTH_CSRF}'></form>"
-                f"<form action='/bewerber/bewerbungen/{app_id}/absagen' method='post'>"
-                f"<input type='hidden' name='csrf_token' value='{SYNTH_CSRF}'></form>"
+                f"<form action='/bewerber/bewerbungen/{app_id}/annehmen' method='get'>"
+                f"<input type='submit' value='Zulassungsangebot annehmen'></form>"
+                f"<form action='/bewerber/bewerbungen/{app_id}/absagen' method='get'>"
+                f"<input type='submit' value='Bewerbung absagen'></form>"
             )
             return self._send(
                 200,
@@ -163,20 +203,36 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, MAINTENANCE_HTML)
         if path == "/bewerber/login":
             if fields.get("benutzername") == portal.username and fields.get("passwort") == portal.password:
+                if portal.login_response_wall in _AUTH_WALL_HTML:
+                    return self._send(200, _AUTH_WALL_HTML[portal.login_response_wall])
                 return self._send(200, "<html><body>Angemeldet</body></html>", cookie=portal.session)
+            fail_body = (
+                LOGIN_HTML.replace(
+                    "</form>",
+                    "<p>Benutzername oder Passwort ist falsch.</p></form>",
+                )
+            )
+            if portal.login_fail_status == 200:
+                return self._send(200, fail_body)
             return self._send(403, "<html><body>Benutzername oder Passwort ist falsch</body></html>")
         if path.startswith("/bewerber/bewerbungen/") and path.endswith(("/annehmen", "/absagen")):
             action = path.rsplit("/", 1)[1]
             app_id = path.split("/")[3]
             if not self._session_ok():
                 return self._send(401, LOGIN_HTML)
-            if fields.get("csrf_token") != SYNTH_CSRF:
+            if fields.get("tx_bewerbung_token") != SYNTH_DECISION_TOKEN:
                 return self._send(400, "<html><body>Ungültiges Formular-Token</body></html>")
+            if not fields.get("confirmed"):
+                return self._send(400, "<html><body>Bestätigung fehlt</body></html>")
             row = next((r for r in portal.applications if r["id"] == app_id), None)
             if row is None:
                 return self._send(404, "<html><body>nicht gefunden</body></html>")
             row["status"] = "Angenommen" if action == "annehmen" else "Abgesagt"
-            return self._send(200, f"<html><body>{action} erfolgreich für {app_id}</body></html>")
+            if action == "annehmen":
+                msg = f"Das Zulassungsangebot für {app_id} wurde verbindlich angenommen."
+            else:
+                msg = f"Die Bewerbung {app_id} wurde verbindlich abgesagt."
+            return self._send(200, f"<html><body><p>{msg}</p></body></html>")
         if path == "/bewerber/annehmen-abort":
             return self._send(200, LOGIN_HTML)
         return self._send(404, "<html><body>nicht gefunden</body></html>")
@@ -188,6 +244,9 @@ class FakePortal:
         self.password = SYNTH_PASSWORD
         self.session = SYNTH_SESSION
         self.mode = "ok"  # ok | bad_html | http_500 | maintenance
+        self.auth_wall: str | None = None  # captcha | 2fa | bundid — Login-Seite ohne Passwort-Formular
+        self.login_response_wall: str | None = None  # nach POST: weiterer Auth-Schritt ohne Session
+        self.login_fail_status = 403  # 403 | 200 — Portal-Fehlermeldung im Body
         self.requests: list[dict] = []
         self.applications = [
             {

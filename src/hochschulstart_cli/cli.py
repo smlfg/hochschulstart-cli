@@ -23,14 +23,19 @@ from hochschulstart_cli.errors import ArgumentParser, CliError, run_main
 from hochschulstart_cli.http_client import PortalClient
 from hochschulstart_cli.json_util import dumps
 from hochschulstart_cli.parsing import (
+    decision_accepted,
+    decision_error_hint,
     extract_form,
+    login_error_hint,
     parse_applications,
     parse_ranglisten,
     parse_termine,
+    unsupported_auth_method,
 )
 from hochschulstart_cli.session import load_session, save_session
 from hochschulstart_cli.state import load_state, save_state
-from hochschulstart_cli.validation import require_positive_int
+from hochschulstart_cli.url_util import join_preserve_base_path
+from hochschulstart_cli.validation import require_application_id, require_positive_int
 
 LOGIN_PAGE = "/bewerber"
 APPLICATIONS_PATH = "/bewerber/bewerbungen"
@@ -70,6 +75,15 @@ def _client(cfg: ResolvedConfig, *, require_session: bool = True) -> PortalClien
     return PortalClient(cfg.base_url, session_cookie=cookie)
 
 
+def _reject_unsupported_auth(html: str) -> None:
+    method = unsupported_auth_method(html)
+    if method:
+        raise CliError(
+            f"nicht unterstütztes Auth-Verfahren erkannt ({method})",
+            code=ec.AUTH,
+        )
+
+
 def _check(resp, *, context: str) -> None:
     if resp.status in (401, 403):
         raise CliError(f"{context}: Anmeldung erforderlich oder abgelehnt (HTTP {resp.status})", code=ec.AUTH)
@@ -80,6 +94,46 @@ def _check(resp, *, context: str) -> None:
     title_low = resp.text[:2000].lower()
     if "wartung" in title_low and "<title>wartung" in title_low:
         raise CliError("Das DoSV-Bewerbungsportal ist derzeit nicht erreichbar (Wartung).", code=ec.NETWORK)
+
+
+def _form_post_fields(form: dict) -> dict[str, str]:
+    fields: dict[str, str] = dict(form.get("hidden") or {})
+    for name, value in (form.get("inputs") or {}).items():
+        if name in fields:
+            continue
+        if value:
+            fields[name] = value
+    return fields
+
+
+def _resolve_decision_post(
+    client: PortalClient,
+    html: str,
+    action: str,
+    bewerbung_id: str,
+) -> tuple[str, dict[str, str]]:
+    fallback = f"{APPLICATIONS_PATH}/{bewerbung_id}/{action}"
+    try:
+        form = extract_form(html, action_contains=action)
+    except CliError:
+        form = {"action": fallback, "method": "post", "inputs": {}, "hidden": {}}
+    target = form.get("action") or fallback
+    method = (form.get("method") or "post").lower()
+    if method == "get":
+        resp = client.get(target)
+        _check(resp, context=f"{action} {bewerbung_id} (Bestätigung)")
+        try:
+            form = extract_form(resp.text, action_contains=action)
+        except CliError:
+            form = extract_form(resp.text)
+        target = form.get("action") or target
+        method = (form.get("method") or "post").lower()
+    if method != "post":
+        raise CliError(
+            f"{action} {bewerbung_id}: Bestätigungsformular erwartet POST, bekam {method!r}",
+            code=ec.PARSE,
+        )
+    return target, _form_post_fields(form)
 
 
 def _login_form_fields(form: dict, username: str, password: str) -> dict[str, str]:
@@ -148,9 +202,30 @@ def cmd_login(args, json_mode: bool) -> int:
     if missing:
         raise CliError("Zugangsdaten fehlen: " + ", ".join(missing), code=ec.AUTH)
 
+    if args.dry_run:
+        fields = _login_form_fields(
+            {"action": LOGIN_FALLBACK_ACTION, "method": "post", "inputs": {}, "hidden": {}},
+            username,
+            password,
+        )
+        target = join_preserve_base_path(cfg.base_url, LOGIN_FALLBACK_ACTION)
+        _emit(
+            {
+                "login": "ok",
+                "username": username,
+                "session_saved": "dry-run",
+                "dry_run": True,
+                "sent": False,
+                "request": {"method": "POST", "url": target, "form_fields": sorted(fields)},
+            },
+            json_mode=json_mode,
+        )
+        return ec.OK
+
     client = _client(cfg, require_session=False)
     page = client.get(LOGIN_PAGE)
     _check(page, context="Login-Seite")
+    _reject_unsupported_auth(page.text)
     try:
         form = extract_form(page.text, action_contains="login")
     except CliError:
@@ -159,10 +234,10 @@ def cmd_login(args, json_mode: bool) -> int:
     fields = _login_form_fields(form, username, password)
     resp = client.post_form(action, fields)
     if resp.status in (401, 403) or not client.session_cookie:
-        raise CliError(
-            "Login fehlgeschlagen: Zugangsdaten prüfen (Hinweis: Konto muss aktiviert sein)",
-            code=ec.AUTH,
-        )
+        _reject_unsupported_auth(resp.text)
+        hint = login_error_hint(resp.text) or login_error_hint(page.text)
+        detail = f" ({hint})" if hint else " (Hinweis: Konto muss aktiviert sein)"
+        raise CliError(f"Login fehlgeschlagen: Zugangsdaten prüfen{detail}", code=ec.AUTH)
     _check(resp, context="Login")
     saved = save_session(client.session_cookie, dry_run=args.dry_run)
     _emit(
@@ -310,6 +385,7 @@ def _detail(client: PortalClient, bewerbung_id: str) -> tuple[dict, str | None]:
 
 
 def _decide(action: str, args, json_mode: bool) -> int:
+    require_application_id(args.bewerbung_id)
     if not args.confirm:
         raise CliError(
             f"{action} sendet nichts ohne --confirm: '{action} {args.bewerbung_id} --confirm' verwenden",
@@ -325,12 +401,7 @@ def _decide(action: str, args, json_mode: bool) -> int:
             f"Bewerbung {args.bewerbung_id} hat kein Zulassungsangebot (Status: {status}) — annehmen nicht möglich",
             code=ec.INPUT,
         )
-    try:
-        form = extract_form(html, action_contains=action)
-    except CliError:
-        form = {"action": f"{APPLICATIONS_PATH}/{args.bewerbung_id}/{action}", "method": "post", "inputs": {}}
-    target = form.get("action") or f"{APPLICATIONS_PATH}/{args.bewerbung_id}/{action}"
-    fields = {k: v for k, v in (form.get("hidden") or {}).items()}
+    target, fields = _resolve_decision_post(client, html, action, args.bewerbung_id)
     if args.dry_run:
         _emit(
             {
@@ -344,9 +415,15 @@ def _decide(action: str, args, json_mode: bool) -> int:
         )
         return ec.OK
     resp = client.post_form(target, fields)
+    if resp.status >= 400:
+        hint = decision_error_hint(resp.text) or f"HTTP {resp.status}"
+        code = ec.INPUT if resp.status < 500 else ec.NETWORK
+        raise CliError(f"{action} {args.bewerbung_id}: {hint}", code=code)
     _check(resp, context=f"{action} {args.bewerbung_id}")
-    low = resp.text.lower()
-    if any(marker in low for marker in ("fehlgeschlagen", "nicht möglich", "ungültig")):
+    hint = decision_error_hint(resp.text)
+    if hint:
+        raise CliError(f"{action} {args.bewerbung_id}: {hint}", code=ec.INPUT)
+    if not decision_accepted(resp.text, action):
         raise CliError(f"{action} {args.bewerbung_id} wurde von der Plattform abgelehnt", code=ec.INPUT)
     _emit(
         {

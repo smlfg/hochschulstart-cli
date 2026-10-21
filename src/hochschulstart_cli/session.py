@@ -43,12 +43,19 @@ def _read_file(path: Path) -> str | None:
 
 
 def _write_file(path: Path, cookie: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps({"session_cookie": cookie}) + "\n", encoding="utf-8")
-    os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
-    tmp.replace(path)
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"session_cookie": cookie}) + "\n", encoding="utf-8")
+        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
+        tmp.replace(path)
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError as e:
+        raise CliError(
+            f"Session kann nicht gespeichert werden: {path}",
+            code=ec.PARSE,
+            details={"reason": str(e)},
+        ) from e
 
 
 def _from_keyring() -> str | None:

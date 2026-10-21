@@ -11,6 +11,14 @@ from hochschulstart_cli import exit_codes as ec
 from hochschulstart_cli.errors import CliError
 
 
+def require_application_id(value: str, *, name: str = "Bewerbungsnummer") -> str:
+    if not value or not value.strip():
+        raise CliError(f"{name} darf nicht leer sein", code=ec.INPUT)
+    if "/" in value or "\\" in value or ".." in value:
+        raise CliError(f"{name} ist ungültig: {value!r}", code=ec.INPUT)
+    return value
+
+
 def require_positive_int(value: int | str, *, name: str = "value") -> int:
     try:
         n = int(value)

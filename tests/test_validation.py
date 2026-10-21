@@ -7,8 +7,19 @@ from hochschulstart_cli.errors import CliError
 from hochschulstart_cli.validation import (
     parse_date,
     reject_nan_in_json_tree,
+    require_application_id,
     require_positive_int,
 )
+
+
+def test_application_id_rejects_empty_and_path_segments():
+    with pytest.raises(CliError) as e:
+        require_application_id("")
+    assert e.value.code == ec.INPUT
+    with pytest.raises(CliError) as e:
+        require_application_id("../B-1002")
+    assert e.value.code == ec.INPUT
+    assert require_application_id("B-1001") == "B-1001"
 
 
 def test_positive_int_rejects_zero_and_negative():

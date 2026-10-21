@@ -40,6 +40,7 @@ Global: `--json` (genau **ein** JSON-Objekt auf stdout, auch im Fehlerfall),
 Beispiele:
 
 ```bash
+hochschulstart login --dry-run   # zeigt nur den Login-POST, sendet nichts
 hochschulstart login
 hochschulstart status --json
 hochschulstart rangliste --bewerbung B-1001
@@ -98,18 +99,20 @@ JSON-Envelope (genau ein Objekt), Watch-State/dry-run, Secret-Leaks.
 
 ## Live-Check (öffentlich, read-only)
 
-Durchgeführt am 13.10.2026, ausschließlich öffentliche Seiten, kein Login, keine
-Formulare, ~6 Requests:
+Durchgeführt am 14.10.2026 (Nachzug zu Issue #1), ausschließlich öffentliche
+Seiten, kein Login, keine Formulare, ~8 Requests:
 
 | Prüfung | Ergebnis |
 |---------|----------|
 | `https://www.hochschulstart.de/` | erreichbar (HTTP 200, TYPO3) |
-| `https://www.hochschulstart.de/bewerben-beobachten/termine` | erreichbar; 6 HTML-Tabellen mit Datum/Beschreibung — `fristen`-Parser passt |
+| `https://www.hochschulstart.de/bewerben-beobachten/termine` | erreichbar; 6 HTML-Tabellen, **77** Terminzeilen — `fristen`/`parse_termine` passt (Snapshot: `tests/fixtures/termine_live_2026-10-14.html`) |
 | `https://www.hochschulstart.de/bewerben-beobachten/bewerbungsstatus` | erreichbar (Infoseite) |
-| `https://dosv.hochschulstart.de/bewerber` | **derzeit nicht erreichbar**: Redirect auf `https://wartung-bw.hochschulstart.de/` (Wartung, HTTP 200) |
-| Login/Bewerbungsübersicht/Ranglisten live | **nicht testbar**: Portal in Wartung und Login benötigt ein echtes Konto |
+| `https://dosv.hochschulstart.de/bewerber` | **noch Wartung**: HTTP 302 → `https://wartung-bw.hochschulstart.de/`; `hochschulstart login` endet mit Exit **3** |
+| Login-Flow (CSRF-Token, Fehlermeldungen) | offline gegen Fake-Portal verifiziert (`tx_login_token` im POST, Portal-Fehlertext bei HTTP 403/200); **live mit Konto** nach Ende der Wartung noch offen |
+| `status` / `rangliste` mit echten Bewerbungsdaten | **noch nicht live testbar** (DoSV-Portal in Wartung); offline Happy-Path in `tests/test_contract_commands.py` |
 
-Die CLI erkennt die Wartungsseite und beendet mit Exit 3 statt Unsinn zu parsen.
+Die CLI erkennt Wartungs-Redirects (`wartung` im Ziel-Host) und Wartungs-HTML
+und beendet mit Exit 3 statt Unsinn zu parsen.
 
 ## Sicherheit
 
@@ -129,8 +132,10 @@ Die CLI erkennt die Wartungsseite und beendet mit Exit 3 statt Unsinn zu parsen.
   sind aus der öffentlichen Struktur abgeleitet; der echte DoSV-Login braucht
   ein registriertes, aktiviertes Konto und ist nicht offline testbar. Bei
   Portalumbau ggf. Pfade in `cli.py` anpassen.
-- Kein Captcha-/2FA-/Bund-ID-Flow; `login` unterstützt den klassischen
-  DoSV-Benutzername/Passwort-Login.
+- Kein Captcha-/2FA-/Bund-ID-Flow; `login` unterstützt nur den klassischen
+  DoSV-Benutzername/Passwort-Login. Wenn das Portal stattdessen Captcha, 2FA
+  oder BundID verlangt, bricht `login` mit Exit **2** und der Meldung
+  „nicht unterstütztes Auth-Verfahren erkannt“ ab (nicht „Zugangsdaten prüfen“).
 - `fristen` liest die öffentliche Terminseite; örtliche Fristen einzelner
   Hochschulen stehen dort nicht.
 
