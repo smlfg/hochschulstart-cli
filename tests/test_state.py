@@ -1,7 +1,10 @@
+import os
+import stat
 from pathlib import Path
 
 import pytest
 
+from hochschulstart_cli import exit_codes as ec
 from hochschulstart_cli.errors import CliError
 from hochschulstart_cli.state import load_state, save_state
 
@@ -30,3 +33,13 @@ def test_empty_file_is_parse_error(tmp_path: Path):
     p.write_text("", encoding="utf-8")
     with pytest.raises(CliError):
         load_state(p)
+
+
+def test_save_state_unwritable_dir_raises_cli_error(tmp_path: Path):
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    os.chmod(ro, stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+    with pytest.raises(CliError) as exc_info:
+        save_state(ro / "watch.json", {"watched": 1})
+    assert exc_info.value.code == ec.PARSE
+    assert "cannot write state" in str(exc_info.value)

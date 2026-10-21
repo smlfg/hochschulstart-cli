@@ -6,6 +6,9 @@ Ohne Session -> 2, Netz down -> 3, kaputtes HTML -> 4, fehlende Args -> 1,
 
 from __future__ import annotations
 
+import os
+import stat
+
 import pytest
 
 from conftest import json_out
@@ -103,6 +106,43 @@ def test_network_down_exit_3(cli_runner, portal):
     assert proc.returncode == ec.NETWORK
     payload = json_out(proc)
     assert payload["error"]["code"] == ec.NETWORK
+
+
+def test_watch_unwritable_state_exit_4_no_traceback(cli_runner, portal, tmp_path):
+    assert cli_runner("login", "--json").returncode == ec.OK
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    os.chmod(
+        ro,
+        stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
+    )
+    proc = cli_runner("watch", "--json", "--state", str(ro / "watch.json"))
+    assert proc.returncode == ec.PARSE
+    assert "Traceback" not in proc.stderr
+    payload = json_out(proc)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ec.PARSE
+    assert "cannot write state" in payload["error"]["message"]
+
+
+def test_login_unwritable_session_dir_exit_4_no_traceback(cli_runner, portal, tmp_path):
+    ro = tmp_path / "xdg"
+    ro.mkdir()
+    os.chmod(
+        ro,
+        stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
+    )
+    proc = cli_runner(
+        "login",
+        "--json",
+        env_extra={"HOCHSCHULSTART_CONFIG_DIR": str(ro / "hochschulstart")},
+    )
+    assert proc.returncode == ec.PARSE
+    assert "Traceback" not in proc.stderr
+    payload = json_out(proc)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ec.PARSE
+    assert "Session" in payload["error"]["message"]
 
 
 def test_broken_html_exit_4(cli_runner, portal):
