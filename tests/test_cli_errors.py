@@ -164,6 +164,27 @@ def test_missing_argument_exit_1(cli_runner, portal):
     proc = cli_runner("annehmen", "--json")
     assert proc.returncode == ec.INPUT
     assert portal.requests == []
+    payload = json_out(proc)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ec.INPUT
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("annehmen", "--json"),
+        ("fristen", "--limit", "abc", "--json"),
+        ("status", "--json", "--nope"),
+    ],
+)
+def test_subparser_usage_error_json_on_stdout(cli_runner, portal, argv):
+    proc = cli_runner(*argv)
+    assert proc.returncode == ec.INPUT
+    assert portal.requests == []
+    payload = json_out(proc)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ec.INPUT
+    assert not proc.stderr.strip()
 
 
 def test_unknown_flag_exit_1(cli_runner, portal):

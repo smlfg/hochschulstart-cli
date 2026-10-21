@@ -454,43 +454,48 @@ def build_parser(json_mode: bool) -> ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("version", parents=[global_flags], help="Paketversion ausgeben")
+    def command_parser(name: str, **kwargs):
+        p = sub.add_parser(name, parents=[global_flags], **kwargs)
+        p.set_json_mode(json_mode)
+        return p
+
+    p = command_parser("version", help="Paketversion ausgeben")
     p.set_defaults(func=cmd_version)
 
-    p = sub.add_parser("config", parents=[global_flags], help="aufgelöste Konfiguration zeigen")
+    p = command_parser("config", help="aufgelöste Konfiguration zeigen")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei (Default: ~/.config/hochschulstart/config.json)")
     p.set_defaults(func=cmd_config)
 
-    p = sub.add_parser("login", parents=[global_flags], help="Session im DoSV-Portal aufbauen")
+    p = command_parser("login", help="Session im DoSV-Portal aufbauen")
     p.add_argument("--username", help="Benutzername (sonst Env/Config/keyring)")
     p.add_argument("--password-file", type=Path, help="Datei mit dem Passwort (statt Env/Config/keyring)")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_login)
 
-    p = sub.add_parser("status", parents=[global_flags], help="Bewerbungen inkl. Status auflisten")
+    p = command_parser("status", help="Bewerbungen inkl. Status auflisten")
     p.add_argument("--status", help="nur Bewerbungen mit diesem Status-Teilstring")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_status)
 
-    p = sub.add_parser("rangliste", parents=[global_flags], help="eigene Ranglisten-Positionen zeigen")
+    p = command_parser("rangliste", help="eigene Ranglisten-Positionen zeigen")
     p.add_argument("--bewerbung", help="auf eine Bewerbungsnummer filtern")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_rangliste)
 
-    p = sub.add_parser("fristen", parents=[global_flags], help="öffentliche Termine & Fristen zeigen")
+    p = command_parser("fristen", help="öffentliche Termine & Fristen zeigen")
     p.add_argument("--url", help="Quell-URL der Terminübersicht")
     p.add_argument("--limit", type=int, help="maximale Anzahl Einträge")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_fristen)
 
-    p = sub.add_parser("watch", parents=[global_flags], help="Statusänderungen lokal beobachten")
+    p = command_parser("watch", help="Statusänderungen lokal beobachten")
     p.add_argument("--state", type=Path, default=None, help="Watch-State-Datei (Default: Config-Verzeichnis/watch.json)")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_watch)
 
     for action, helptext in (("annehmen", "Zulassungsangebot annehmen (nur mit --confirm)"),
                              ("absagen", "Bewerbung absagen/zurückziehen (nur mit --confirm)")):
-        p = sub.add_parser(action, parents=[global_flags], help=helptext)
+        p = command_parser(action, help=helptext)
         p.add_argument("bewerbung_id", help="Bewerbungsnummer")
         p.add_argument("--confirm", action="store_true", help="Aktion wirklich senden (Pflicht)")
         p.add_argument("--config", type=Path, default=None, help="Config-Datei")
