@@ -200,7 +200,7 @@ def _offer_keyring_store(username: str | None, password: str) -> None:
     if keyring is None:
         return
     answer = input("Passwort im Schlüsselbund speichern? [J/n] ").strip().lower()
-    if answer not in ("", "j", "ja", "y", "yes"):
+    if answer not in ("", "j", "ja"):
         return
     try:
         if username is not None:
@@ -459,13 +459,39 @@ def _detail(client: PortalClient, bewerbung_id: str) -> tuple[dict, str | None]:
     return resp.text, status
 
 
+def _interactive_decision(action: str, args, json_mode: bool) -> bool:
+    """Terminal-Bestätigung ohne --confirm; False -> bisheriger Fehler."""
+    if not _interactive(json_mode):
+        return False
+    _stdout_write(
+        f"Bewerbung {args.bewerbung_id} — Aktion: {action}\n"
+        "Die Aktion ist verbindlich und kann nicht rückgängig gemacht werden.\n"
+    )
+    answer = input(f"Wirklich {action}? Das ist verbindlich. [j/N] ").strip().lower()
+    if answer not in ("j", "ja"):
+        raise CliError(
+            f"Abgebrochen — nichts gesendet ({action} {args.bewerbung_id}). "
+            "Im Terminal nochmal ausführen und mit j bestätigen, oder --confirm nutzen.",
+            code=ec.INPUT,
+        )
+    args.confirm = True
+    return True
+
+
+def _stdout_write(text: str) -> None:
+    import sys
+
+    sys.stdout.write(text)
+
+
 def _decide(action: str, args, json_mode: bool) -> int:
     require_application_id(args.bewerbung_id)
     if not args.confirm:
-        raise CliError(
-            f"{action} sendet nichts ohne --confirm: '{action} {args.bewerbung_id} --confirm' verwenden",
-            code=ec.INPUT,
-        )
+        if not _interactive_decision(action, args, json_mode):
+            raise CliError(
+                f"{action} sendet nichts ohne --confirm: '{action} {args.bewerbung_id} --confirm' verwenden",
+                code=ec.INPUT,
+            )
     cfg = resolve_config(config_path=args.config)
     client = _client(cfg)
     html, status = _detail(client, args.bewerbung_id)
