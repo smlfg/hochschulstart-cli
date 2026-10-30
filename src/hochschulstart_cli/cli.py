@@ -14,6 +14,7 @@ from pathlib import Path
 from hochschulstart_cli import __version__
 from hochschulstart_cli import exit_codes as ec
 from hochschulstart_cli.config import (
+    KEYRING_SERVICE,
     ResolvedConfig,
     config_dir,
     require_credentials,
@@ -164,6 +165,63 @@ def _read_password_file(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip("\r\n")
 
 
+def _interactive(json_mode: bool) -> bool:
+    """Interaktive Prompts nur im echten Terminal; JSON/Pipes bleiben maschinenlesbar."""
+    import sys
+
+    return not json_mode and sys.stdin.isatty()
+
+
+def _prompt_credentials() -> tuple[str, str] | None:
+    """Benutzername/Passwort im Terminal fragen; None ohne TTY (kein Prompt)."""
+    import getpass
+    import sys
+
+    if not sys.stdin.isatty():
+        return None
+    if sys.stdout.isatty():
+        print("Zugangsdaten für hochschulstart.de (das Passwort wird nicht angezeigt):")
+    username = input("Benutzername: ").strip()
+    password = getpass.getpass("Passwort: ")
+    return username, password
+
+
+def _keyring_import():
+    try:
+        import keyring
+    except ImportError:
+        return None
+    return keyring
+
+
+def _offer_keyring_store(username: str | None, password: str) -> None:
+    """Passwort optional im Schlüsselbund ablegen (nur interaktiv, nur wenn nutzbar)."""
+    keyring = _keyring_import()
+    if keyring is None:
+        return
+    answer = input("Passwort im Schlüsselbund speichern? [J/n] ").strip().lower()
+    if answer not in ("", "j", "ja", "y", "yes"):
+        return
+    try:
+        if username is not None:
+            keyring.set_password(KEYRING_SERVICE, "username", username)
+        keyring.set_password(KEYRING_SERVICE, "password", password)
+    except Exception as exc:
+        print(
+            f"Hinweis: Speichern im Schlüsselbund fehlgeschlagen ({type(exc).__name__}) — "
+            "Passwort wurde nicht gespeichert.",
+            file=_stderr(),
+        )
+        return
+    print("Passwort im Schlüsselbund gespeichert.", file=_stderr())
+
+
+def _stderr():
+    import sys
+
+    return sys.stderr
+
+
 def cmd_version(_args, json_mode: bool) -> int:
     if json_mode:
         print(dumps({"ok": True, "version": __version__}))
@@ -194,13 +252,28 @@ def cmd_login(args, json_mode: bool) -> int:
     cfg = resolve_config(config_path=args.config)
     username = args.username or cfg.username
     password = _read_password_file(args.password_file) if args.password_file else cfg.password
+    prompted_username = prompted_password = False
+    if (not username or not password) and _interactive(json_mode):
+        creds = _prompt_credentials()
+        if creds is not None:
+            if not username and creds[0]:
+                username = creds[0]
+                prompted_username = True
+            if not password and creds[1]:
+                password = creds[1]
+                prompted_password = True
     missing = []
     if not username:
         missing.append("--username oder HOCHSCHULSTART_USERNAME")
     if not password:
         missing.append("--password-file oder HOCHSCHULSTART_PASSWORD")
     if missing:
-        raise CliError("Zugangsdaten fehlen: " + ", ".join(missing), code=ec.AUTH)
+        raise CliError(
+            "Zugangsdaten fehlen: "
+            + ", ".join(missing)
+            + " oder `hochschulstart login` im Terminal ausführen",
+            code=ec.AUTH,
+        )
 
     if args.dry_run:
         fields = _login_form_fields(
@@ -240,6 +313,8 @@ def cmd_login(args, json_mode: bool) -> int:
         raise CliError(f"Login fehlgeschlagen: Zugangsdaten prüfen{detail}", code=ec.AUTH)
     _check(resp, context="Login")
     saved = save_session(client.session_cookie, dry_run=args.dry_run)
+    if prompted_password and _interactive(json_mode):
+        _offer_keyring_store(username if prompted_username else None, password)
     _emit(
         {
             "login": "ok",
