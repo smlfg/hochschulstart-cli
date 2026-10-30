@@ -1,9 +1,11 @@
 """hochschulstart.de (DoSV): Bewerbungsportal-CLI.
 
 Kommandos: login, status, rangliste, fristen, watch, annehmen, absagen.
-Sicherheitsregel: annehmen/absagen senden nur mit ``--confirm``; ohne beendet
-die CLI **vor jedem Request** mit Exit 1. Ohne Session: Exit 2. ``--dry-run``
-zeigt den geplanten Request, sendet ihn aber nicht.
+Sicherheitsregel: annehmen/absagen senden nur mit ``--confirm`` — im Terminal
+fragt die CLI zusätzlich verbindlich nach; ohne beendet die CLI **vor jedem
+Request** mit Exit 1. Ohne Session: Exit 2. ``--dry-run`` zeigt den geplanten
+Request, sendet ihn aber nicht. Ohne ``--json``: lesbare Textausgabe für
+Menschen; Prompts nur im echten Terminal.
 """
 
 from __future__ import annotations

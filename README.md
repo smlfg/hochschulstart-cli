@@ -9,6 +9,26 @@ sich die CLI vor jedem Request mit Exit 1.
 > bleiben deine eigene Entscheidung. Die CLI fasst nur zusammen und sendet exakt
 > den einen Request, den du mit `--confirm` freigibst.
 
+## Schnellstart
+
+```bash
+pipx install git+https://github.com/smlfg/hochschulstart-cli   # empfohlen, landet im PATH
+# Alternative: pip install --user git+https://github.com/smlfg/hochschulstart-cli
+# Wenn `hochschulstart` danach nicht gefunden wird: pipx nutzen oder das bin-Verzeichnis
+# des venv in den PATH aufnehmen.
+```
+
+Drei typische Befehle:
+
+```bash
+hochschulstart login      # fragt im Terminal nach Benutzername/Passwort
+hochschulstart status     # Bewerbungen mit Studiengang/Hochschule und Status
+hochschulstart fristen    # Termine & Fristen des Verfahrens
+```
+
+Im Terminal gib die CLI lesbaren Text aus; für Skripte/Agenten gibt es `--json`.
+Interaktiv gefragt wird nur, wenn eine echte Tastatur (TTY) davor hängt.
+
 ## Installation
 
 ```bash
@@ -28,27 +48,30 @@ Global (jeweils direkt **nach** dem Unterkommando, z. B. `status --json`):
 
 | Kommando | Zweck |
 |----------|-------|
-| `hochschulstart login` | Session im DoSV-Portal aufbauen (Credentials aus Env/Config/keyring) |
+| `hochschulstart login` | Session im DoSV-Portal aufbauen (creds: Flags/env/config/keyring; sonst interaktiv im Terminal) |
 | `hochschulstart status` | Bewerbungen inkl. Status (`--status` filtert) |
 | `hochschulstart rangliste` | eigene Ranglisten-Positionen (`--bewerbung` filtert) |
 | `hochschulstart fristen` | öffentliche Terminübersicht (`--url`, `--limit`) |
 | `hochschulstart watch` | Statusänderungen lokal beobachten (`--state PATH`) |
-| `hochschulstart annehmen ID` | Zulassungsangebot annehmen — **nur mit `--confirm`** |
-| `hochschulstart absagen ID` | Bewerbung absagen/zurückziehen — **nur mit `--confirm`** |
+| `hochschulstart annehmen ID` | Zulassungsangebot annehmen — **nur mit `--confirm`** oder Terminal-Bestätigung |
+| `hochschulstart absagen ID` | Bewerbung absagen/zurückziehen — **nur mit `--confirm`** oder Terminal-Bestätigung |
 | `hochschulstart config` | aufgelöste Konfiguration (ohne Secrets) |
 | `hochschulstart version` | Paketversion |
 
 Beispiele:
 
 ```bash
-hochschulstart login --dry-run   # zeigt nur den Login-POST, sendet nichts
-hochschulstart login
-hochschulstart status --json
-hochschulstart rangliste --bewerbung B-1001
+hochschulstart login                                       # oder interaktiv: ohne Flags im Terminal
+hochschulstart status                                      # Menschen: Namen statt IDs
+hochschulstart status --status "Zulassungsangebot"
 hochschulstart fristen --limit 10
+hochschulstart login --dry-run                             # zeigt nur den Login-POST, sendet nichts
+hochschulstart status --json                               # für Skripte/Agenten
+hochschulstart rangliste --bewerbung B-1001
 hochschulstart watch --state ~/.local/state/hochschulstart/watch.json
-hochschulstart annehmen B-1001 --confirm --dry-run   # zeigt nur den Request
-hochschulstart annehmen B-1001 --confirm             # sendet wirklich
+hochschulstart annehmen B-1001 --confirm --dry-run         # zeigt nur den Request
+hochschulstart annehmen B-1001                             # Terminal: Bestätigungsfrage [j/N]
+hochschulstart annehmen B-1001 --confirm                   # sendet wirklich (nicht interaktiv)
 ```
 
 ## Exit-Codes
@@ -56,7 +79,7 @@ hochschulstart annehmen B-1001 --confirm             # sendet wirklich
 | Code | Bedeutung |
 |------|-----------|
 | 0 | Erfolg |
-| 1 | Ungültige Eingabe (Flags, Argumente, Validierung); auch Abbruch ohne `--confirm`; argparse-Usage |
+| 1 | Ungültige Eingabe (Flags, Argumente, Validierung); auch Abbruch ohne `--confirm` bzw. abgelehnte Terminal-Bestätigung; argparse-Usage |
 | 2 | Authentifizierung (keine Session, fehlende/falsche Zugangsdaten) |
 | 3 | Netzwerk / Portal nicht erreichbar (z. B. Wartung) |
 | 4 | Parse-Fehler (HTML/JSON/Config/State unerwartet) |
@@ -118,7 +141,10 @@ und beendet mit Exit 3 statt Unsinn zu parsen.
 ## Sicherheit
 
 - `annehmen`/`absagen` senden **nur** mit `--confirm`; ohne beendet die CLI
-  **vor jedem Request** mit Exit 1. Mit `--confirm` aber ohne Session: Exit 2.
+  **vor jedem Request**   mit Exit 1. Im echten Terminal fragt die CLI außerdem
+  nach („Wirklich annehmen/absagen? Das ist verbindlich. [j/N]“) — nur `j`/`ja`
+  setzt die Aktion fort, alles andere bricht ohne Request ab. Mit `--confirm`
+  aber ohne Session: Exit 2.
 - `--dry-run` zeigt Methode, Ziel-URL und Formularfeld-Namen, sendet aber nichts
   und schreibt keinen State.
 - Passwörter und Session-Cookies erscheinen nie in stdout/stderr, JSON, State
