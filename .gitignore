@@ -4,5 +4,6 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
+scratch/
 .state-*.tmp
 .repo-work/

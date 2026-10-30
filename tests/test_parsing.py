@@ -48,6 +48,16 @@ def test_parse_termine_fields():
     assert "Bewerbungsphase" in termine[0]["title"]
 
 
+def test_parse_termine_entities_keep_umlauts():
+    """Live-Seite kodiert Umlaute als Entities (&uuml;) — sie dürfen in tabellen/csv-ähnlicher Ausgabe nicht verloren gehen."""
+    termine = parse_termine(_read("termine_entities.html"))
+    details = [t["detail"] for t in termine]
+    assert any("Start für die bundesweit zulassungsbeschränkten Studiengänge" in d for d in details)
+    assert any("Für zwangsnützliche Studiengänge" in d for d in details)
+    assert any("aßfallend" in d for d in details)
+    assert not any("\ufffd" in d or " fr " == d for d in details)
+
+
 def test_parse_termine_live_snapshot_2026_10_14():
     """Tabellenstruktur von www.hochschulstart.de (14.10.2026, read-only curl)."""
     termine = parse_termine(_read("termine_live_2026-10-14.html"))

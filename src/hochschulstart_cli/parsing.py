@@ -88,6 +88,17 @@ class _TableParser(HTMLParser):
         if self._cell is not None:
             self._cell.append(data)
 
+    # convert_charrefs=False liefert Entitäten (&uuml; etc.) über eigene
+    # Hooks; ohne diese Implementation gingen Umlaute in Tabellenzellen
+    # verloren ("Start für" -> "Start fr").
+    def handle_entityref(self, name: str) -> None:
+        if self._cell is not None:
+            self._cell.append(unescape(f"&{name};"))
+
+    def handle_charref(self, name: str) -> None:
+        if self._cell is not None:
+            self._cell.append(unescape(f"&#{name};"))
+
 
 def _parse(html: str) -> _TableParser:
     parser = _TableParser()
