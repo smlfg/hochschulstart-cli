@@ -569,9 +569,9 @@ def build_parser(json_mode: bool) -> ArgumentParser:
     p.add_argument("--config", type=Path, default=None, help="Config-Datei (Default: ~/.config/hochschulstart/config.json)")
     p.set_defaults(func=cmd_config)
 
-    p = command_parser("login", help="Session im DoSV-Portal aufbauen")
-    p.add_argument("--username", help="Benutzername (sonst Env/Config/keyring)")
-    p.add_argument("--password-file", type=Path, help="Datei mit dem Passwort (statt Env/Config/keyring)")
+    p = command_parser("login", help="Session im DoSV-Portal aufbauen (fehlende Zugangsdaten fragt die CLI im Terminal ab)")
+    p.add_argument("--username", help="Benutzername (sonst Env/Config/keyring/Terminal-Prompt)")
+    p.add_argument("--password-file", type=Path, help="Datei mit dem Passwort (statt Env/Config/keyring/Terminal-Prompt)")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_login)
 
@@ -600,7 +600,7 @@ def build_parser(json_mode: bool) -> ArgumentParser:
                              ("absagen", "Bewerbung absagen/zurückziehen (nur mit --confirm)")):
         p = command_parser(action, help=helptext)
         p.add_argument("bewerbung_id", help="Bewerbungsnummer")
-        p.add_argument("--confirm", action="store_true", help="Aktion wirklich senden (Pflicht)")
+        p.add_argument("--confirm", action="store_true", help="Aktion wirklich senden (ohne: im Terminal nachfragen)")
         p.add_argument("--config", type=Path, default=None, help="Config-Datei")
         p.set_defaults(func=cmd_annehmen if action == "annehmen" else cmd_absagen)
 

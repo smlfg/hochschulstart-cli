@@ -112,7 +112,7 @@ def test_login_prompt_unknown_password_field_filled_by_getpass(
     monkeypatch.setenv("HOCHSCHULSTART_USERNAME", "env-user")
     portal.username = "env-user"
     portal.password = "geheim-tty"
-    monkeypatch.setattr("sys.stdin", FakeTty("\n"))
+    monkeypatch.setattr("sys.stdin", FakeTty("\nn\n"))  # zweite Zeile: keyring-Angebot ablehnen
     monkeypatch.setattr("getpass.getpass", lambda prompt="": "geheim-tty")
     code, _out, _err, error = _run(["login"])
     assert code == ec.OK, error
