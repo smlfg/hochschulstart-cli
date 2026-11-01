@@ -7,6 +7,7 @@ name = "hochschulstart"
 version = "0.1.0"
 description = "hochschulstart.de (DoSV) CLI: Login, Bewerbungsstatus, Ranglisten, Fristen, Angebote, Watch — Annahme/Absage nur mit --confirm"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [{ name = "Samuel Fleig" }]
 requires-python = ">=3.11"
 dependencies = []
