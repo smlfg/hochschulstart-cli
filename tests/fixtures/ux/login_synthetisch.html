@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>Hochschulstart - Bewerbungsportal Anmeldung</title>
+</head>
+<body>
+<h1>Bewerbungsportal für das Dialogorientierte Serviceverfahren (DoSV)</h1>
+<!-- Synthetische Login-Seite. Feldnamen und Formular-Art aus der Live-Erkundung,
+     action bewusst stabil auf /bewerber/2376 gesetzt. -->
+<form action="/bewerber/2376" method="post" autocomplete="off">
+  <input type="hidden" name="tx_login_token" value="SYNTH-FORM-TOKEN">
+  <div class="labelUser">
+    <label for="j_username">DoSV-Benutzername</label>
+    <input type="text" id="j_username" name="j_username" value="" maxlength="20" autofocus>
+  </div>
+  <div class="labelPassword">
+    <label for="j_password">Passwort</label>
+    <input type="password" id="j_password" name="j_password" maxlength="20">
+  </div>
+  <input type="submit" class="submitButton" value="Anmelden">
+</form>
+<p><a href="https://www.hochschulstart.de/bewerben-beobachten/registrierung/bund-id">BundID</a>
+wird derzeit nicht für die Anmeldung angeboten.</p>
+</body>
+</html>
