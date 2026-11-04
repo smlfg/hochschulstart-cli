@@ -56,7 +56,11 @@ class PortalClient:
         polite_delay: float = 0.3,
     ) -> None:
         if not base_url.startswith(("http://", "https://")):
-            raise CliError(f"base_url must be http(s): {base_url!r}", code=ec.INPUT)
+            raise CliError(
+                f"Basis-URL muss http(s) sein: {base_url!r} — "
+                "HOCHSCHULSTART_BASE_URL prüfen",
+                code=ec.INPUT,
+            )
         self.base_url = base_url.rstrip("/")
         self.session_cookie = session_cookie
         self.timeout = timeout
@@ -94,7 +98,11 @@ class PortalClient:
             resp_headers = {k: v for k, v in (e.headers or {}).items()}
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             reason = getattr(e, "reason", e)
-            raise CliError(f"Netzwerkfehler für {url}: {reason}", code=ec.NETWORK) from None
+            raise CliError(
+                f"Netzwerkfehler für {url}: {reason} — Verbindung prüfen und "
+                "den Befehl erneut ausführen",
+                code=ec.NETWORK,
+            ) from None
         self._last_request = time.monotonic()
 
         self._capture_cookie(resp_headers.get("Set-Cookie", ""))
