@@ -11,23 +11,21 @@ sich die CLI vor jedem Request mit Exit 1.
 
 ## Schnellstart
 
-```bash
-pipx install git+https://github.com/smlfg/hochschulstart-cli   # empfohlen, landet im PATH
-# Alternative: pip install --user git+https://github.com/smlfg/hochschulstart-cli
-# Wenn `hochschulstart` danach nicht gefunden wird: pipx nutzen oder das bin-Verzeichnis
-# des venv in den PATH aufnehmen.
-```
-
-Drei typische Befehle:
+`pipx` installiert den Befehl direkt in den PATH. Danach anmelden, Bewerbungen
+ansehen und eine Zulassung mit Suchbegriff annehmen:
 
 ```bash
-hochschulstart login      # fragt im Terminal nach Benutzername/Passwort
-hochschulstart status     # Bewerbungen mit Studiengang/Hochschule und Status
-hochschulstart fristen    # Termine & Fristen des Verfahrens
+pipx install git+https://github.com/smlfg/hochschulstart-cli
+hochschulstart login
+hochschulstart status
+hochschulstart annehmen "Musterstudiengang"
 ```
 
-Im Terminal gib die CLI lesbaren Text aus; für Skripte/Agenten gibt es `--json`.
-Interaktiv gefragt wird nur, wenn eine echte Tastatur (TTY) davor hängt.
+`login` fragt im Terminal nach Benutzername und Passwort. `status` zeigt
+Studiengang, Hochschule und Status; `annehmen` fragt vor der verbindlichen
+Aktion mit `[j/N]` nach. Im Terminal gibt die CLI lesbaren Text aus; für
+Skripte/Agenten gibt es `--json`. Interaktiv gefragt wird nur, wenn eine echte
+Tastatur (TTY) davor hängt.
 
 ## Installation
 
