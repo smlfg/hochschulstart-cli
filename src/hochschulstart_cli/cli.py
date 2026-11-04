@@ -420,30 +420,88 @@ def cmd_logout(args, json_mode: bool) -> int:
     return ec.OK
 
 
+def _matches(application: dict[str, str], query: str) -> bool:
+    needle = query.casefold()
+    return any(
+        needle in (application.get(field) or "").casefold()
+        for field in ("program", "university", "id")
+    )
+
+
+def _application_line(index: int, application: dict[str, str]) -> str:
+    program = application.get("program") or "?"
+    university = application.get("university") or "?"
+    status = application.get("status") or "?"
+    app_id = application.get("id") or "?"
+    return f"{index}) {program} – {university} – {status} ({app_id})"
+
+
+def _emit_applications(applications: list[dict[str, str]]) -> None:
+    print(f"Bewerbungen ({len(applications)}):")
+    for index, application in enumerate(applications, start=1):
+        print(_application_line(index, application))
+
+
 def cmd_status(args, json_mode: bool) -> int:
     cfg = resolve_config(config_path=args.config)
     client = _client(cfg)
     resp = client.get(APPLICATIONS_PATH)
     _check(resp, context="Bewerbungsübersicht")
     applications = parse_applications(resp.text)
+    if args.search:
+        applications = [a for a in applications if _matches(a, args.search)]
     if args.status:
         wanted = args.status.lower()
         applications = [a for a in applications if wanted in (a.get("status") or "").lower()]
-    _emit({"count": len(applications), "applications": applications}, json_mode=json_mode)
+    if json_mode:
+        _emit({"count": len(applications), "applications": applications}, json_mode=True)
+    else:
+        _emit_applications(applications)
     return ec.OK
+
+
+def _load_applications(client: PortalClient) -> list[dict[str, str]]:
+    resp = client.get(APPLICATIONS_PATH)
+    _check(resp, context="Bewerbungsübersicht")
+    return parse_applications(resp.text)
 
 
 def cmd_rangliste(args, json_mode: bool) -> int:
     cfg = resolve_config(config_path=args.config)
     client = _client(cfg)
+    matched_ids: set[str] | None = None
+    if args.search:
+        applications = [a for a in _load_applications(client) if _matches(a, args.search)]
+        if not applications:
+            raise CliError(
+                f"keine Bewerbung zu {args.search!r} gefunden — "
+                f"'hochschulstart status {args.search}' zeigt die Treffer",
+                code=ec.INPUT,
+            )
+        matched_ids = {a.get("id") or "" for a in applications}
     resp = client.get(RANGLISTEN_PATH)
     _check(resp, context="Ranglisten")
     entries = parse_ranglisten(resp.text)
+    if matched_ids is not None:
+        entries = [e for e in entries if (e.get("bewerbung") or "") in matched_ids]
     if args.bewerbung:
         entries = [e for e in entries if args.bewerbung in (e.get("bewerbung") or "")]
         if not entries:
-            raise CliError(f"keine Ranglisten-Einträge für Bewerbung {args.bewerbung!r}", code=ec.INPUT)
-    _emit({"count": len(entries), "ranglisten": entries}, json_mode=json_mode)
+            raise CliError(
+                f"keine Ranglisten-Einträge für Bewerbung {args.bewerbung!r} — "
+                "'hochschulstart rangliste' zeigt alle Einträge",
+                code=ec.INPUT,
+            )
+    if json_mode:
+        _emit({"count": len(entries), "ranglisten": entries}, json_mode=True)
+    else:
+        print(f"Ranglisten ({len(entries)}):")
+        for index, entry in enumerate(entries, start=1):
+            print(
+                f"{index}) {entry.get('bewerbung', '?')} – "
+                f"{entry.get('quote', '?')} – Rang {entry.get('rang', '?')} "
+                f"(Grenzrang {entry.get('grenzrang', '?')})"
+            )
     return ec.OK
 
 
@@ -666,12 +724,22 @@ def build_parser(json_mode: bool) -> ArgumentParser:
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_login)
 
+    p = command_parser("whoami", help="angemeldeten Benutzer und Session-Quelle zeigen")
+    p.add_argument("--config", type=Path, default=None, help="Config-Datei")
+    p.set_defaults(func=cmd_whoami)
+
+    p = command_parser("logout", help="Session entfernen (idempotent)")
+    p.add_argument("--config", type=Path, default=None, help="Config-Datei")
+    p.set_defaults(func=cmd_logout)
+
     p = command_parser("status", help="Bewerbungen inkl. Status auflisten")
+    p.add_argument("search", nargs="?", help="Suchbegriff in Studiengang/Hochschule/Bewerbungsnummer")
     p.add_argument("--status", help="nur Bewerbungen mit diesem Status-Teilstring")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_status)
 
     p = command_parser("rangliste", help="eigene Ranglisten-Positionen zeigen")
+    p.add_argument("search", nargs="?", help="Suchbegriff in Studiengang/Hochschule/Bewerbungsnummer")
     p.add_argument("--bewerbung", help="auf eine Bewerbungsnummer filtern")
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_rangliste)
@@ -699,11 +767,15 @@ def build_parser(json_mode: bool) -> ArgumentParser:
 
 
 def _main(argv: list[str] | None = None) -> int:
-    args_list = argv if argv is not None else __import__("sys").argv[1:]
-    json_mode = "--json" in args_list
-    parser = build_parser(json_mode)
+    import sys
+
+    args_list = argv if argv is not None else sys.argv[1:]
+    explicit_json = "--json" in args_list
+    parser = build_parser(explicit_json)
     args = parser.parse_args(args_list)
-    json_mode = args.json or json_mode
+    explicit_json = explicit_json or bool(getattr(args, "json", False))
+    auto_json = (not sys.stdout.isatty()) and (not sys.stdin.isatty())
+    json_mode = explicit_json or auto_json
     return args.func(args, json_mode)
 
 
