@@ -60,7 +60,10 @@ def emit_error(
 def run_main(main_fn, argv: list[str] | None = None) -> int:
     """Wrap ``main_fn(argv) -> int`` with CliError / KeyboardInterrupt / EOF handling."""
     arglist = argv if argv is not None else sys.argv[1:]
-    json_mode = "--json" in arglist
+    # JSON auch ohne --json, wenn stdin und stdout keine Terminals sind (Pipe/Agent).
+    json_mode = "--json" in arglist or (
+        not sys.stdout.isatty() and not sys.stdin.isatty()
+    )
     try:
         return main_fn(arglist if argv is not None else None)
     except CliError as e:
@@ -76,6 +79,14 @@ def run_main(main_fn, argv: list[str] | None = None) -> int:
             interrupted=True,
         )
         return ec.ABORT
+    except Exception as e:  # noqa: BLE001 - kein Traceback für unerwartete Fehler
+        err = CliError(
+            f"unerwarteter Fehler ({type(e).__name__}) — Befehl erneut ausführen; "
+            "bleibt der Fehler, 'hochschulstart --help' zeigt die gültigen Aufrufe",
+            code=ec.INPUT,
+        )
+        emit_error(err, json_mode=json_mode)
+        return err.code
 
 
 class ArgumentParser(argparse.ArgumentParser):
