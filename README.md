@@ -2,12 +2,13 @@
 
 CLI für das DoSV-Bewerbungsportal von hochschulstart.de: Login, Bewerbungsstatus,
 Ranglisten, öffentliche Fristen und ein lokaler Watch auf Statusänderungen.
-**Annahme/Absage werden nur mit `--confirm` gesendet** — ohne `--confirm` beendet
-sich die CLI vor jedem Request mit Exit 1.
+**Annahme/Absage sind verbindlich:** Im Terminal fragt die CLI mit `[j/N]` nach
+(Default Nein) und sendet erst bei `j` alle Formularschritte. `--confirm`/`--yes`
+sind nur für Agenten gedacht.
 
 > Kein Ersatz für das Portal: rechtsverbindliche Erklärungen (Annehmen/Absagen)
 > bleiben deine eigene Entscheidung. Die CLI fasst nur zusammen und sendet exakt
-> den einen Request, den du mit `--confirm` freigibst.
+> den einen Request, den du im Terminal oder mit `--confirm` freigibst.
 
 ## Schnellstart
 
@@ -23,9 +24,10 @@ hochschulstart annehmen "Musterstudiengang"
 
 `login` fragt im Terminal nach Benutzername und Passwort. `status` zeigt
 Studiengang, Hochschule und Status; `annehmen` fragt vor der verbindlichen
-Aktion mit `[j/N]` nach. Im Terminal gibt die CLI lesbaren Text aus; für
-Skripte/Agenten gibt es `--json`. Interaktiv gefragt wird nur, wenn eine echte
-Tastatur (TTY) davor hängt.
+Aktion mit `[j/N]` auf stderr nach. Im Terminal gibt die CLI lesbaren Text aus;
+`--json` oder ein nicht-interaktives stdout (Pipe/Agent) liefern genau ein
+JSON-Objekt. Interaktiv gefragt wird nur, wenn eine echte Tastatur (TTY) davor
+hängt.
 
 ## Installation
 
@@ -47,12 +49,12 @@ Global (jeweils direkt **nach** dem Unterkommando, z. B. `status --json`):
 | Kommando | Zweck |
 |----------|-------|
 | `hochschulstart login` | Session im DoSV-Portal aufbauen (creds: Flags/env/config/keyring; sonst interaktiv im Terminal) |
-| `hochschulstart status` | Bewerbungen inkl. Status (`--status` filtert) |
-| `hochschulstart rangliste` | eigene Ranglisten-Positionen (`--bewerbung` filtert) |
+| `hochschulstart status [SUCHBEGRIFF]` | Bewerbungen inkl. Status; Suchbegriff filtert nach Studiengang/Hochschule (`--status` filtert zusätzlich) |
+| `hochschulstart rangliste [SUCHBEGRIFF]` | eigene Ranglisten-Positionen; `--bewerbung` filtert nach Bewerbungsnummer |
 | `hochschulstart fristen` | öffentliche Terminübersicht (`--url`, `--limit`) |
 | `hochschulstart watch` | Statusänderungen lokal beobachten (`--state PATH`) |
-| `hochschulstart annehmen ID` | Zulassungsangebot annehmen — **nur mit `--confirm`** oder Terminal-Bestätigung |
-| `hochschulstart absagen ID` | Bewerbung absagen/zurückziehen — **nur mit `--confirm`** oder Terminal-Bestätigung |
+| `hochschulstart annehmen SUCHBEGRIFF` | Zulassungsangebot annehmen — im Terminal mit `[j/N]`, `--confirm`/`--yes` nur für Agenten |
+| `hochschulstart absagen SUCHBEGRIFF` | Bewerbung absagen/zurückziehen — im Terminal mit `[j/N]`, `--confirm`/`--yes` nur für Agenten |
 | `hochschulstart config` | aufgelöste Konfiguration (ohne Secrets) |
 | `hochschulstart version` | Paketversion |
 
@@ -61,23 +63,25 @@ Beispiele:
 ```bash
 hochschulstart login                                       # oder interaktiv: ohne Flags im Terminal
 hochschulstart status                                      # Menschen: Namen statt IDs
+hochschulstart status "Musterstudiengang"                  # Suchbegriff positional
 hochschulstart status --status "Zulassungsangebot"
 hochschulstart fristen --limit 10
 hochschulstart login --dry-run                             # zeigt nur den Login-POST, sendet nichts
 hochschulstart status --json                               # für Skripte/Agenten
+hochschulstart rangliste "Musterstudiengang"
 hochschulstart rangliste --bewerbung B-1001
 hochschulstart watch --state ~/.local/state/hochschulstart/watch.json
-hochschulstart annehmen B-1001 --confirm --dry-run         # zeigt nur den Request
-hochschulstart annehmen B-1001                             # Terminal: Bestätigungsfrage [j/N]
-hochschulstart annehmen B-1001 --confirm                   # sendet wirklich (nicht interaktiv)
+hochschulstart annehmen "Musterstudiengang" --dry-run      # zeigt nur den Request
+hochschulstart annehmen "Musterstudiengang"                # Terminal: Bestätigungsfrage [j/N]
+hochschulstart annehmen "Musterstudiengang" --confirm      # sendet wirklich (Agent, ohne TTY)
 ```
 
 ## Exit-Codes
 
 | Code | Bedeutung |
 |------|-----------|
-| 0 | Erfolg |
-| 1 | Ungültige Eingabe (Flags, Argumente, Validierung); auch Abbruch ohne `--confirm` bzw. abgelehnte Terminal-Bestätigung; argparse-Usage |
+| 0 | Erfolg; auch bewusstes `N` bei der Rückfrage und idempotentes `logout` |
+| 1 | Ungültige Eingabe (Flags, Argumente, Validierung, kein/mehrdeutiger Treffer); Abbruch ohne TTY und ohne `--confirm`; argparse-Usage |
 | 2 | Authentifizierung (keine Session, fehlende/falsche Zugangsdaten) |
 | 3 | Netzwerk / Portal nicht erreichbar (z. B. Wartung) |
 | 4 | Parse-Fehler (HTML/JSON/Config/State unerwartet) |
@@ -138,11 +142,11 @@ und beendet mit Exit 3 statt Unsinn zu parsen.
 
 ## Sicherheit
 
-- `annehmen`/`absagen` senden **nur** mit `--confirm`; ohne beendet die CLI
-  **vor jedem Request**   mit Exit 1. Im echten Terminal fragt die CLI außerdem
-  nach („Wirklich annehmen/absagen? Das ist verbindlich. [j/N]“) — nur `j`/`ja`
-  setzt die Aktion fort, alles andere bricht ohne Request ab. Mit `--confirm`
-  aber ohne Session: Exit 2.
+- `annehmen`/`absagen` senden im Terminal erst nach `j`/`ja` auf die Rückfrage
+  `… verbindlich? [j/N]` (Default Nein); `N` beendet ohne Request. Ohne TTY und
+  ohne `--confirm`/`--yes` bricht die CLI **vor jedem Request** mit Exit 1 ab.
+  `--confirm`/`--yes` sind nur für Agenten gedacht und überspringen die Frage.
+  Mit `--confirm` aber ohne Session: Exit 2.
 - `--dry-run` zeigt Methode, Ziel-URL und Formularfeld-Namen, sendet aber nichts
   und schreibt keinen State.
 - Passwörter und Session-Cookies erscheinen nie in stdout/stderr, JSON, State
