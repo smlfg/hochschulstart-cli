@@ -42,11 +42,11 @@ def _read_file(path: Path) -> str | None:
     return cookie or None
 
 
-def _write_file(path: Path, cookie: str) -> None:
+def _write_file(path: Path, data: dict) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps({"session_cookie": cookie}) + "\n", encoding="utf-8")
+        tmp.write_text(json.dumps(data) + "\n", encoding="utf-8")
         os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
         tmp.replace(path)
         os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
@@ -96,7 +96,19 @@ def save_session(cookie: str, *, dry_run: bool = False) -> str:
         return "keyring"
     except Exception:
         pass
-    _write_file(session_path(), cookie)
+    _write_file(session_path(), {"session_cookie": cookie})
+    return "file"
+
+
+def save_login_marker(*, dry_run: bool = False) -> str:
+    """Vermerkt einen bestätigten Login, wenn das Portal kein Cookie setzt.
+
+    Der Marker enthält kein Geheimnis und wird von :func:`load_session` nicht als
+    Session-Cookie gelesen. Er hält nur fest, dass die Erfolgsseite sichtbar war.
+    """
+    if dry_run:
+        return "dry-run"
+    _write_file(session_path(), {"login_confirmed": True})
     return "file"
 
 

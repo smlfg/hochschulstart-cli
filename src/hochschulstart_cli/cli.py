@@ -35,7 +35,13 @@ from hochschulstart_cli.parsing import (
     parse_termine,
     unsupported_auth_method,
 )
-from hochschulstart_cli.session import load_session, save_session
+from hochschulstart_cli.session import (
+    clear_session,
+    load_session,
+    save_login_marker,
+    save_session,
+    session_path,
+)
 from hochschulstart_cli.state import load_state, save_state
 from hochschulstart_cli.url_util import join_preserve_base_path
 from hochschulstart_cli.validation import require_application_id, require_positive_int
@@ -46,6 +52,8 @@ RANGLISTEN_PATH = "/bewerber/ranglisten"
 LOGIN_FALLBACK_ACTION = "/bewerber/login"
 
 TERMINAL_STATUS = ("angenommen", "abgesagt", "abgelehnt", "zurückgezogen", "zurueckgezogen")
+
+
 
 
 def _emit(data: dict, *, json_mode: bool) -> None:
@@ -78,11 +86,34 @@ def _client(cfg: ResolvedConfig, *, require_session: bool = True) -> PortalClien
     return PortalClient(cfg.base_url, session_cookie=cookie)
 
 
+def _login_page_confirmed(html: str) -> bool:
+    if _has_password_form(html):
+        return False
+    text = html.lower()
+    return any(
+        marker in text
+        for marker in ("angemeldet", "bewerbungsportal", "mein konto", "willkommen")
+    )
+
+
+def _has_password_form(html: str) -> bool:
+    try:
+        form = extract_form(html)
+    except CliError:
+        return False
+    return any("pass" in name.lower() for name in (form.get("inputs") or {}))
+
+
 def _reject_unsupported_auth(html: str) -> None:
+    # Ein normales Login-Formular mit Passwortfeld ist keine Auth-Wand; der
+    # Hinweis-Link auf die BundID steht auch auf der funktionierenden Login-Seite.
+    if _has_password_form(html):
+        return
     method = unsupported_auth_method(html)
     if method:
         raise CliError(
-            f"nicht unterstütztes Auth-Verfahren erkannt ({method})",
+            f"nicht unterstütztes Auth-Verfahren erkannt ({method}) — "
+            "Anmeldung im Browser auf hochschulstart.de durchführen",
             code=ec.AUTH,
         )
 
@@ -302,30 +333,90 @@ def cmd_login(args, json_mode: bool) -> int:
     _check(page, context="Login-Seite")
     _reject_unsupported_auth(page.text)
     try:
-        form = extract_form(page.text, action_contains="login")
+        # Live enthält die action eine session-spezifische numerische ID
+        # (z. B. /bewerber/2376), nicht das Wort "login".
+        form = extract_form(page.text)
     except CliError:
         form = {"action": LOGIN_FALLBACK_ACTION, "method": "post", "inputs": {}}
     action = form.get("action") or LOGIN_FALLBACK_ACTION
     fields = _login_form_fields(form, username, password)
     resp = client.post_form(action, fields)
-    if resp.status in (401, 403) or not client.session_cookie:
+    if resp.status in (401, 403):
         _reject_unsupported_auth(resp.text)
         hint = login_error_hint(resp.text) or login_error_hint(page.text)
         detail = f" ({hint})" if hint else " (Hinweis: Konto muss aktiviert sein)"
         raise CliError(f"Login fehlgeschlagen: Zugangsdaten prüfen{detail}", code=ec.AUTH)
     _check(resp, context="Login")
-    saved = save_session(client.session_cookie, dry_run=args.dry_run)
+    hint = login_error_hint(resp.text)
+    if hint:
+        raise CliError(f"Login fehlgeschlagen: {hint}", code=ec.AUTH)
+    _reject_unsupported_auth(resp.text)
+    if not _login_page_confirmed(resp.text):
+        raise CliError(
+            "Login nicht bestätigt: das Portal zeigt keine angemeldete Seite. "
+            "Zugangsdaten prüfen und `hochschulstart login` erneut ausführen",
+            code=ec.AUTH,
+        )
+    if client.session_cookie:
+        saved = save_session(client.session_cookie, dry_run=args.dry_run)
+    else:
+        saved = save_login_marker(dry_run=args.dry_run)
     if prompted_password and _interactive(json_mode):
         _offer_keyring_store(username if prompted_username else None, password)
-    _emit(
-        {
-            "login": "ok",
-            "username": username,
-            "session_saved": saved,
-            "dry_run": args.dry_run,
-        },
-        json_mode=json_mode,
-    )
+    if json_mode:
+        _emit(
+            {
+                "login": "ok",
+                "username": username,
+                "session_saved": saved,
+                "dry_run": args.dry_run,
+            },
+            json_mode=True,
+        )
+    else:
+        print("Login erfolgreich.")
+        if saved == "keyring":
+            print("Session im Schlüsselbund gespeichert.")
+        elif saved == "file":
+            print(f"Session gespeichert (Datei mit Rechten 0600): {session_path()}")
+        else:
+            print(f"Session gespeichert ({saved}).")
+    return ec.OK
+
+
+def cmd_whoami(args, json_mode: bool) -> int:
+    cfg = resolve_config(config_path=args.config)
+    cookie, source = load_session()
+    if not cookie:
+        raise CliError(
+            "keine aktive Session: zuerst 'hochschulstart login' ausführen",
+            code=ec.AUTH,
+        )
+    username = cfg.username or "(unbekannt)"
+    if json_mode:
+        _emit(
+            {
+                "username": username,
+                "session_source": source,
+            },
+            json_mode=True,
+        )
+    else:
+        print(f"Benutzer: {username}")
+        print(f"Session: {source}")
+    return ec.OK
+
+
+def cmd_logout(args, json_mode: bool) -> int:
+    resolve_config(config_path=args.config)
+    cookie, _source = load_session()
+    clear_session()
+    if json_mode:
+        _emit({"logged_out": True, "session_present": False}, json_mode=True)
+    elif cookie:
+        print("Session entfernt.")
+    else:
+        print("Keine Session vorhanden.")
     return ec.OK
 
 
@@ -461,6 +552,12 @@ def _detail(client: PortalClient, bewerbung_id: str) -> tuple[dict, str | None]:
     return resp.text, status
 
 
+def _stdout_write(text: str) -> None:
+    import sys
+
+    sys.stdout.write(text)
+
+
 def _interactive_decision(action: str, args, json_mode: bool) -> bool:
     """Terminal-Bestätigung ohne --confirm; False -> bisheriger Fehler."""
     if not _interactive(json_mode):
@@ -478,12 +575,6 @@ def _interactive_decision(action: str, args, json_mode: bool) -> bool:
         )
     args.confirm = True
     return True
-
-
-def _stdout_write(text: str) -> None:
-    import sys
-
-    sys.stdout.write(text)
 
 
 def _decide(action: str, args, json_mode: bool) -> int:
