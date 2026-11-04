@@ -54,8 +54,6 @@ LOGIN_FALLBACK_ACTION = "/bewerber/login"
 TERMINAL_STATUS = ("angenommen", "abgesagt", "abgelehnt", "zurückgezogen", "zurueckgezogen")
 
 
-
-
 def _emit(data: dict, *, json_mode: bool) -> None:
     if json_mode:
         print(dumps({"ok": True, **data}))
@@ -610,55 +608,120 @@ def _detail(client: PortalClient, bewerbung_id: str) -> tuple[dict, str | None]:
     return resp.text, status
 
 
+def _stderr_write(text: str) -> None:
+    import sys
+
+    sys.stderr.write(text)
+    sys.stderr.flush()
+
+
 def _stdout_write(text: str) -> None:
     import sys
 
     sys.stdout.write(text)
 
 
-def _interactive_decision(action: str, args, json_mode: bool) -> bool:
-    """Terminal-Bestätigung ohne --confirm; False -> bisheriger Fehler."""
-    if not _interactive(json_mode):
-        return False
-    _stdout_write(
-        f"Bewerbung {args.bewerbung_id} — Aktion: {action}\n"
-        "Die Aktion ist verbindlich und kann nicht rückgängig gemacht werden.\n"
+def _choose_application(
+    action: str,
+    matches: list[dict[str, str]],
+    *,
+    interactive: bool,
+) -> dict[str, str]:
+    if len(matches) == 1:
+        return matches[0]
+    listing = "\n".join(
+        _application_line(index, application)
+        for index, application in enumerate(matches, start=1)
     )
-    answer = input(f"Wirklich {action}? Das ist verbindlich. [j/N] ").strip().lower()
-    if answer not in ("j", "ja"):
+    if not interactive:
         raise CliError(
-            f"Abgebrochen — nichts gesendet ({action} {args.bewerbung_id}). "
-            "Im Terminal nochmal ausführen und mit j bestätigen, oder --confirm nutzen.",
+            f"mehrere Bewerbungen passen zur Auswahl — bitte den Suchbegriff genauer "
+            f"angeben, z. B. die Bewerbungsnummer:\n{listing}",
             code=ec.INPUT,
         )
-    args.confirm = True
-    return True
+    _stderr_write("Mehrere Bewerbungen passen zu deiner Suche:\n" + listing + "\n")
+    _stderr_write("Auswahl (Nummer): ")
+    answer = input().strip()
+    if not answer.isdigit() or not 1 <= int(answer) <= len(matches):
+        raise CliError(
+            "ungültige Auswahl — Nummer aus der Liste eingeben oder den Suchbegriff "
+            "genauer fassen",
+            code=ec.INPUT,
+        )
+    return matches[int(answer) - 1]
+
+
+def _interactive_decision(
+    action: str,
+    application: dict[str, str],
+    *,
+    interactive: bool,
+) -> bool:
+    """Zusammenfassung + verbindliche Rückfrage auf stderr; True nur bei j/ja."""
+    if not interactive:
+        return False
+    app_id = application.get("id") or "?"
+    _stderr_write(
+        f"Bewerbung: {app_id}\n"
+        f"Studiengang: {application.get('program') or '?'}\n"
+        f"Hochschule: {application.get('university') or '?'}\n"
+        f"Status: {application.get('status') or '?'}\n"
+    )
+    question = "Annahme verbindlich? [j/N] " if action == "annehmen" else "Absage verbindlich? [j/N] "
+    _stderr_write(question)
+    answer = input().strip().lower()
+    if answer in ("j", "ja"):
+        return True
+    _stderr_write("Abgebrochen — nichts gesendet.\n")
+    return False
 
 
 def _decide(action: str, args, json_mode: bool) -> int:
-    require_application_id(args.bewerbung_id)
-    if not args.confirm:
-        if not _interactive_decision(action, args, json_mode):
-            raise CliError(
-                f"{action} sendet nichts ohne --confirm: '{action} {args.bewerbung_id} --confirm' verwenden",
-                code=ec.INPUT,
-            )
-    cfg = resolve_config(config_path=args.config)
-    client = _client(cfg)
-    html, status = _detail(client, args.bewerbung_id)
-    if status and any(t in status.lower() for t in TERMINAL_STATUS):
-        raise CliError(f"Bewerbung {args.bewerbung_id} ist bereits '{status}' — keine Aktion nötig", code=ec.INPUT)
-    if action == "annehmen" and status and not any(k in status.lower() for k in ("angebot", "zulassung")):
+    query = args.suchbegriff
+    require_application_id(query, name="Suchbegriff")
+    confirm = bool(args.confirm)
+    interactive = _interactive(json_mode)
+    if not confirm and not interactive and not args.dry_run:
         raise CliError(
-            f"Bewerbung {args.bewerbung_id} hat kein Zulassungsangebot (Status: {status}) — annehmen nicht möglich",
+            f"{action} sendet nichts ohne Bestätigung: im Terminal ausführen und "
+            f"mit j bestätigen, oder für Agenten '{action} {query} --confirm' verwenden",
             code=ec.INPUT,
         )
-    target, fields = _resolve_decision_post(client, html, action, args.bewerbung_id)
+
+    cfg = resolve_config(config_path=args.config)
+    client = _client(cfg)
+    matches = [a for a in _load_applications(client) if _matches(a, query)]
+    if not matches:
+        raise CliError(
+            f"keine Bewerbung zu {query!r} gefunden — 'hochschulstart status {query}' "
+            "zeigt die vorhandenen Bewerbungen",
+            code=ec.INPUT,
+        )
+    application = _choose_application(action, matches, interactive=interactive)
+    bewerbung_id = application.get("id") or ""
+    require_application_id(bewerbung_id, name="Bewerbungsnummer")
+    status = application.get("status") or ""
+    if status and any(t in status.lower() for t in TERMINAL_STATUS):
+        raise CliError(
+            f"Bewerbung {bewerbung_id} ist bereits '{status}' — keine Aktion nötig",
+            code=ec.INPUT,
+        )
+    if action == "annehmen" and status and not any(
+        k in status.lower() for k in ("angebot", "zulassung")
+    ):
+        raise CliError(
+            f"Bewerbung {bewerbung_id} hat kein Zulassungsangebot (Status: {status}) — "
+            "annehmen nicht möglich",
+            code=ec.INPUT,
+        )
+
+    html, _status = _detail(client, bewerbung_id)
+    target, fields = _resolve_decision_post(client, html, action, bewerbung_id)
     if args.dry_run:
         _emit(
             {
                 "action": action,
-                "application_id": args.bewerbung_id,
+                "application_id": bewerbung_id,
                 "dry_run": True,
                 "sent": False,
                 "request": {"method": "POST", "url": target, "form_fields": sorted(fields)},
@@ -666,26 +729,40 @@ def _decide(action: str, args, json_mode: bool) -> int:
             json_mode=json_mode,
         )
         return ec.OK
+
+    if not confirm and not _interactive_decision(
+        action, application, interactive=interactive
+    ):
+        return ec.OK
+
     resp = client.post_form(target, fields)
     if resp.status >= 400:
         hint = decision_error_hint(resp.text) or f"HTTP {resp.status}"
         code = ec.INPUT if resp.status < 500 else ec.NETWORK
-        raise CliError(f"{action} {args.bewerbung_id}: {hint}", code=code)
-    _check(resp, context=f"{action} {args.bewerbung_id}")
+        raise CliError(f"{action} {bewerbung_id}: {hint}", code=code)
+    _check(resp, context=f"{action} {bewerbung_id}")
     hint = decision_error_hint(resp.text)
     if hint:
-        raise CliError(f"{action} {args.bewerbung_id}: {hint}", code=ec.INPUT)
+        raise CliError(f"{action} {bewerbung_id}: {hint}", code=ec.INPUT)
     if not decision_accepted(resp.text, action):
-        raise CliError(f"{action} {args.bewerbung_id} wurde von der Plattform abgelehnt", code=ec.INPUT)
-    _emit(
-        {
-            "action": action,
-            "application_id": args.bewerbung_id,
-            "sent": True,
-            "result": "ok",
-        },
-        json_mode=json_mode,
-    )
+        raise CliError(f"{action} {bewerbung_id} wurde von der Plattform abgelehnt", code=ec.INPUT)
+
+    verb = "Angenommen" if action == "annehmen" else "Abgesagt"
+    program = application.get("program") or "?"
+    if json_mode:
+        _emit(
+            {
+                "action": action,
+                "application_id": bewerbung_id,
+                "program": program,
+                "university": application.get("university") or "",
+                "sent": True,
+                "result": "ok",
+            },
+            json_mode=True,
+        )
+    else:
+        print(f"{verb}: {bewerbung_id} ({program})")
     return ec.OK
 
 
@@ -700,6 +777,7 @@ def cmd_absagen(args, json_mode: bool) -> int:
 def build_parser(json_mode: bool) -> ArgumentParser:
     parser = ArgumentParser(prog="hochschulstart", description=__doc__)
     parser.set_json_mode(json_mode)
+    parser.add_argument("--version", action="version", version=__version__)
     global_flags = ArgumentParser(add_help=False)
     global_flags.add_argument("--json", action="store_true", help="genau ein JSON-Objekt auf stdout")
     global_flags.add_argument("--dry-run", action="store_true", help="nichts senden/schreiben (nur zeigen)")
@@ -755,11 +833,17 @@ def build_parser(json_mode: bool) -> ArgumentParser:
     p.add_argument("--config", type=Path, default=None, help="Config-Datei")
     p.set_defaults(func=cmd_watch)
 
-    for action, helptext in (("annehmen", "Zulassungsangebot annehmen (nur mit --confirm)"),
-                             ("absagen", "Bewerbung absagen/zurückziehen (nur mit --confirm)")):
+    for action, helptext in (("annehmen", "Zulassungsangebot annehmen (Terminal: Rückfrage [j/N])"),
+                             ("absagen", "Bewerbung absagen/zurückziehen (Terminal: Rückfrage [j/N])")):
         p = command_parser(action, help=helptext)
-        p.add_argument("bewerbung_id", help="Bewerbungsnummer")
-        p.add_argument("--confirm", action="store_true", help="Aktion wirklich senden (ohne: im Terminal nachfragen)")
+        p.add_argument("suchbegriff", help="Studiengang, Hochschule oder Bewerbungsnummer")
+        p.add_argument(
+            "--confirm",
+            "--yes",
+            dest="confirm",
+            action="store_true",
+            help="ohne Rückfrage senden (nur für Agenten; ohne TTY Pflicht)",
+        )
         p.add_argument("--config", type=Path, default=None, help="Config-Datei")
         p.set_defaults(func=cmd_annehmen if action == "annehmen" else cmd_absagen)
 

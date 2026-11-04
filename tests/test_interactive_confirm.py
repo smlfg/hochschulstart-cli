@@ -1,8 +1,8 @@
 """Interaktive Bestätigung bei annehmen/absagen (Terminal, ohne --confirm).
 
-Ohne TTY bleibt das bisherige Verhalten: Fehler vor jedem Request (Exit 1).
-Mit Terminal-Fake-stdin: 'n' bricht ab (kein Request), 'j' setzt die Aktion
-als mit --confirm bestätigt fort. Offline gegen den Fake-Portal-Server.
+Ohne TTY und ohne --confirm: Abbruch vor jedem Request (Exit 1). Mit
+Terminal-Fake-stdin: 'n' beendet ohne schreibenden Request (Exit 0), 'j' sendet
+alle Formularschritte. Offline gegen den Fake-Portal-Server.
 """
 
 from __future__ import annotations
@@ -37,20 +37,22 @@ def test_annehmen_negativ_n_sends_no_request(
     monkeypatch: pytest.MonkeyPatch, session_env, patched_client, portal
 ):
     monkeypatch.setattr("sys.stdin", FakeTty("n\n"))
-    code, _out, _err, error = _run(["annehmen", "B-1001"])
-    assert code == ec.INPUT
-    assert error is not None
-    assert "Abgebrochen" in error.message
-    assert portal.requests == [], "Antwort 'n' darf keinen Request auslösen"
+    code, _out, err, error = _run(["annehmen", "B-1001"])
+    assert code == ec.OK, error
+    assert "Abgebrochen" in err
+    assert not [r for r in portal.requests if r["method"] == "POST"], (
+        "Antwort 'n' darf keinen schreibenden Request auslösen"
+    )
 
 
 def test_annehmen_nein_text_sends_no_request(
     monkeypatch: pytest.MonkeyPatch, session_env, patched_client, portal
 ):
     monkeypatch.setattr("sys.stdin", FakeTty("nein\n"))
-    code, _out, _err, error = _run(["absagen", "B-1002"])
-    assert code == ec.INPUT
-    assert portal.requests == []
+    code, _out, err, error = _run(["absagen", "B-1002"])
+    assert code == ec.OK, error
+    assert "Abgebrochen" in err
+    assert not [r for r in portal.requests if r["method"] == "POST"]
 
 
 def test_annehmen_ja_continues_and_posts(
@@ -59,9 +61,10 @@ def test_annehmen_ja_continues_and_posts(
     portal.username = "testuser"
     portal.password = "testpass"
     monkeypatch.setattr("sys.stdin", FakeTty("j\n"))
-    code, out, _err, error = _run(["annehmen", "B-1001"])
+    code, out, err, error = _run(["annehmen", "B-1001"])
     assert code == ec.OK, error
-    assert "Wirklich annehmen?" in out
+    assert "Annahme verbindlich? [j/N]" in err
+    assert "Angenommen: B-1001" in out
     posts = [r for r in portal.requests if r["method"] == "POST" and r["path"] == "/bewerber/bewerbungen/B-1001/annehmen"]
     assert len(posts) == 1
 
@@ -88,4 +91,4 @@ def test_confirm_eof_aborts_130_no_request(
 
     code = run()
     assert code == ec.ABORT
-    assert portal.requests == []
+    assert not [r for r in portal.requests if r["method"] == "POST"]
