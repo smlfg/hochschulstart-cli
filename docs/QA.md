@@ -2,7 +2,7 @@
 
 Datum: 2026-11-05
 Version: 0.1.0
-Commit: `5116b40` (Master, Arbeitsbaum sauber)
+Commit: `5116b40` (QA-Baseline; Nachprüfung bis `f6e5796`, Arbeitsbaum sauber)
 Prüfer: unabhängige QA-Iteration (find -> file, keine Code-Fixes)
 
 ## Umgebung
@@ -26,7 +26,7 @@ Prüfer: unabhängige QA-Iteration (find -> file, keine Code-Fixes)
 
 ## Ergebnis
 
-**59 von 64 Prüfungen OK, 5 FAIL.**
+**64 von 64 Prüfungen OK (nach Nachprüfung S6; zuvor 59/64, 5 FAIL).**
 
 | Prüfung | Befehl | Erwartet | Ergebnis | Beleg (gekürzt) |
 |---|---|---|---|---|
@@ -44,16 +44,16 @@ Prüfer: unabhängige QA-Iteration (find -> file, keine Code-Fixes)
 | Login `--dry-run` | `login --dry-run` | kein Request | OK | `sent: false`, nur POST-Plan |
 | Captcha/2FA/BundID | `login` mit Auth-Wand | Exit 2, kein POST | OK | 3/3 `nicht unterstütztes Auth-Verfahren erkannt (…), posts=0` |
 | Keyring-Rückfrage | `login` mit keyring-Extra | `[J/n]` auf stderr | OK | `Passwort im Schlüsselbund speichern? [J/n]` im stderr-Log |
-| Keyring-Hinweis | `login` aus frischer pipx-Installation | Hinweis auf optionalen Keyring | FAIL | Nur `Session gespeichert (Datei mit Rechten 0600)`, kein Hinweis |
+| Keyring-Hinweis | `login` aus frischer pipx-Installation | Hinweis auf optionalen Keyring | OK (nach Fix 408bb55) | `Hinweis: Optionaler Schlüsselbund per 'pipx inject hochschulstart keyring' …` |
 | Kompletter Quickstart | Login -> `status` -> `annehmen` (fake_portal, PTY) | Session, lesbarer Status, Aktion | OK | Login 0600, 2 Bewerbungen, Annahme mit `j` |
 | Status lesbar | `status` (TTY) | Text, Namen statt IDs | OK | `Bewerbungen (2):`, Studiengang/Hochschule/Status/Nummer |
 | Status Suchbegriff | `status Musterstudiengang` | genau 1 Treffer | OK | `Bewerbungen (1): … B-1001` |
 | Status Hochschule/Umlaut | `status Musteruniversität` | Treffer | OK | `Bewerbungen (1): … B-1001` |
-| Status Umlaut-Umschrift | `status Musteruniversitaet`/`Koeln`/`oekologie` | Treffer wie mit Umlaut | FAIL | `Bewerbungen (0):` (keine `ae/oe/ue`-Auflösung) |
+| Status Umlaut-Umschrift | `status Musteruniversitaet`/`Koeln`/`oekologie` | Treffer wie mit Umlaut | OK (nach Fix 869e7bc) | jeweils 1 Treffer (B-1001 bzw. B-1003) |
 | `--status`-Filter | `status --status zulassung` (6 Testzeilen) | jeder Treffer passt | OK | 2/2 Treffer mit Status `Zulassungsangebot`, keine Fremdtreffer |
 | Leeres Suchergebnis | `status Nichtsda` | Exit 0, `0` Treffer | OK | `Bewerbungen (0):` |
 | Status `--json` | `status --json` | genau ein valides Objekt | OK | `{"ok": true, "count": 2, …}` |
-| JSON bei stdout-Pipe | `script -c "hochschulstart status"` mit stdout in einer Pipe | JSON, weil stdout kein TTY | FAIL | Lesbarer Text statt JSON (stdin war TTY) |
+| JSON bei stdout-Pipe | `script -c "hochschulstart status"` mit stdout in einer Pipe | JSON, weil stdout kein TTY | OK (nach Fix b52ad79) | genau ein JSON-Objekt (`ok=true`, `count=6`) |
 | Status ohne Session | `status` ohne Session | Exit 2, `login` nennen | OK | `keine aktive Session: zuerst 'hochschulstart login' ausführen` |
 | Kaputte Session-Datei | `status` mit `{not json` | Exit 4, kein Traceback | OK | `ungültige Session-Datei …`, Exit 4 |
 | Rangliste | `rangliste` | lesbare Einträge | OK | `Ranglisten (2):`, Rang/Grenzrang |
@@ -69,8 +69,8 @@ Prüfer: unabhängige QA-Iteration (find -> file, keine Code-Fixes)
 | Fristen Limit live | `fristen --limit 5`/`--limit 10` | genau N Einträge | OK | `count: 5`/`count: 10` |
 | Fristen `--json` | `fristen --json` | valides Objekt | OK | `ok=true`, `count=77` |
 | Falsche Quell-URL | `HOCHSCHULSTART_PUBLIC_URL=http://127.0.0.1:1/termine fristen` | Exit 3, nächster Schritt | OK | `Netzwerkfehler … Verbindung prüfen und den Befehl erneut ausführen` |
-| Ungültiges Limit | `fristen --limit 0` | Exit 1, Ablehnung | OK | `--limit must be positive, got 0` |
-| Live angemeldete Leser | `status`, `rangliste`, `watch --dry-run`, `annehmen/absagen --dry-run` mit synthetischer Session | Exit 2 mit Login-Hinweis statt Parse-Fehler | FAIL | 5/5 Exit 4, z. B. `Bewerbungsübersicht nicht erkennbar …` |
+| Ungültiges Limit | `fristen --limit 0` | Exit 1, Ablehnung | OK (nach Fix f6e5796) | `--limit muss positiv sein (erhielt 0) — 'hochschulstart --help' zeigt die gültigen Werte` |
+| Live angemeldete Leser | `status`, `rangliste`, `watch --dry-run`, `annehmen/absagen --dry-run` mit synthetischer Session | Exit 2 mit Login-Hinweis statt Parse-Fehler | OK (nach Fix 680f67f) | 5/5 Exit 2, `Session ungültig/abgelaufen — 'hochschulstart login' ausführen` |
 | Live-Login-Grenze | `login`, dann `^D` | Prompt, Exit 130 | OK | Prompt erscheint, `interrupted`, Exit 130 |
 | Live-Login-Dry-Run | `login --dry-run` mit Dummy-Creds | kein Request | OK | `sent: false`, POST-Plan auf `/bewerber/login` |
 | Annehmen-Zusammenfassung | `annehmen "Musterstudiengang"` (PTY, `N`) | Zusammenfassung + `[j/N]` auf stderr | OK | Bewerbung/Studiengang/Hochschule/Status + `Annahme verbindlich? [j/N]` im stderr-Log |
@@ -86,58 +86,46 @@ Prüfer: unabhängige QA-Iteration (find -> file, keine Code-Fixes)
 | Strg+C am Prompt | `annehmen` (PTY), dann `^C` | Exit 130, kein Traceback | OK | `interrupted`, Exit 130 |
 | Aktion ohne Session | `annehmen … --confirm` ohne Session | Exit 2, kein Request | OK | `keine aktive Session …`, Request-Log leer |
 | Fehler nennen Schritt | Netz/Login/keine Session/kein Treffer | nächster Schritt genannt | OK | z. B. `Verbindung prüfen …`, `'hochschulstart login' ausführen` |
-| Parse-/HTTP-Fehler | kaputtes HTML, HTTP 500 | nächster Schritt genannt | FAIL | `Bewerbungsübersicht nicht erkennbar …` bzw. `HTTP 500` ohne Hinweis |
+| Parse-/HTTP-Fehler | kaputtes HTML, HTTP 500 | nächster Schritt genannt | OK (nach Fix f6e5796) | `… Seite erneut laden; bleibt der Fehler, das Portal im Browser prüfen` bzw. `HTTP 500 — Befehl erneut ausführen …` |
 | argparse-Usage | fehlende/ungültige Argumente | Exit 1, kein Traceback | OK | `annehmen`, `bogus`, `--limit abc` jeweils Exit 1 |
 | JSON-Fehlervertrag | `--json` mit Fehler | genau ein Objekt | OK | 19/19 gesammelte JSON-Ausgaben valide, je ein Objekt |
 | Keine Tracebacks | alle QA-Läufe | keine Tracebacks | OK | `grep -rl Traceback scratch/qa/*` leer |
 | Keine Secrets | Logs/State/JSON | keine Passwörter/Cookies | OK | synthetische Creds nicht in Ausgaben; State ohne Cookie |
-| Testsuite | `scratch/venv/bin/pytest -q` | grün | OK | `125 passed, 6 skipped` |
+| Testsuite | `scratch/venv/bin/pytest -q` | grün | OK (nach Fix f6e5796) | `135 passed, 6 skipped` |
 | README-Kommandos | README gegen `--help` | alle vorhanden | OK | 16 Befehlszeilen, keine fehlenden Unterkommandos |
 | Exit-Codes | gesammelte Läufe | 0/1/2/3/4/130 wie dokumentiert | OK | Erfolg 0, Usage 1, Auth 2, Netz 3, Parse 4, Abbruch 130 |
 
-## Offene FAILs
+## Nachprüfung S6 (2026-11-05)
 
-1. **Live-Session ungültig/abgelaufen -> Parse-Fehler statt Login-Hinweis.**
-   `status`, `rangliste`, `watch`, `annehmen --dry-run` und `absagen --dry-run`
-   enden live mit synthetischer Session alle mit Exit **4** und
-   `Bewerbungsübersicht nicht erkennbar (keine Tabelle mit Studiengang/Status)`.
-   Kontrolle mit `curl --max-redirs 0`: `dosv.hochschulstart.de/bewerber/bewerbungen`
-   antwortet **302** (leerer Body); der Client folgt der Redirect-Schleife bis zum
-   HTTPError und parst den leeren Body. Erwartet: Exit **2** mit
-   `Session ungültig/abgelaufen — 'hochschulstart login' ausführen`.
-   Belege: `scratch/qa/58-status-live.log`, `scratch/qa/77-live-status.out` bis
-   `81-live-absagen.out`.
-2. **Automatisches JSON bei stdout ohne TTY greift nur halb.**
-   `hochschulstart status | cat` in einem PTY (stdin TTY, stdout Pipe) liefert
-   lesbaren Text statt JSON. `INTERFACE.md` verlangt JSON, sobald stdout kein
-   TTY ist. Ursache im Verhalten: Auto-JSON nur wenn stdin **und** stdout keine
-   TTY sind. Beleg: `scratch/qa/36-stdoutpipe.log`.
-3. **Umlaut-Umschrift wird nicht aufgelöst.**
-   `status Musteruniversitaet`, `status Koeln`, `status oekologie` liefern
-   `Bewerbungen (0):`, obwohl die Umlautschreibweise trifft. Erwartet:
-   `ae/oe/ue`-Variante findet denselben Treffer (Groß-/Kleinschreibung
-   funktioniert bereits). Belege: `scratch/qa/05-status-umlaut.log`,
-   `scratch/qa/06-status-ae.log`, `scratch/qa/semantic.out`.
-4. **Kein Keyring-Hinweis in der dokumentierten Standardinstallation.**
-   `pipx install git+https://github.com/smlfg/hochschulstart-cli` installiert
-   das optionale Extra nicht; `login` speichert die Session als Datei 0600,
-   erwähnt aber weder Keyring noch `pipx inject hochschulstart keyring`. Erst
-   nach manuellem Injizieren von `keyring` erscheint `[J/n]`. Beleg:
-   `scratch/qa/01b-login-fake.log` gegenüber `scratch/qa/63-login-keyring.log`.
-5. **Parse-/HTTP-Fehler nennen keinen nächsten Schritt.**
-   `Bewerbungsübersicht: HTTP 500` (Exit 3) und
-   `Bewerbungsübersicht nicht erkennbar …` (Exit 4) sowie
-   `--limit must be positive, got 0` (Exit 1) nennen keinen nächsten Schritt.
-   Erwartet: kurzer Hinweis, z. B. erneut versuchen, Portal im Browser prüfen,
-   `--help` für gültige Werte. Belege: `scratch/qa/errors.out`,
-   `scratch/qa/58-status-live.log`, `scratch/qa/27-fristen-limit0.log`.
+Alle fünf FAILs sind im Code behoben und live erneut geprüft; es bleiben keine
+offenen FAILs. Belege liegen unter `scratch/qa/s6-*.out`, `scratch/qa/s6-live-*`
+und `scratch/qa/s6-recheck.out`.
+
+1. **Session ungültig/abgelaufen -> Exit 2.** Der HTTP-Client erkennt eine
+   vorhandene Session, die auf die Anmeldeseite umgeleitet wird oder in einer
+   Redirect-Schleife endet, und meldet
+   `Session ungültig/abgelaufen — 'hochschulstart login' ausführen`. Live mit
+   synthetischer Session: `status`, `rangliste`, `watch --dry-run`,
+   `annehmen --dry-run`, `absagen --dry-run` jeweils Exit 2 (`680f67f`).
+2. **JSON bei stdout ohne TTY.** `auto_json` hängt nur noch an stdout; stdin darf
+   ein TTY sein. `script -c "hochschulstart status | cat"` liefert ein
+   JSON-Objekt (`b52ad79`).
+3. **Umlaut-Umschrift.** Die Suche faltet Groß-/Kleinschreibung und
+   `ä/ö/ü/ß` zu `ae/oe/ue/ss`; `Musteruniversitaet`, `Koeln` und `oekologie`
+   liefern dieselben Treffer wie die Umlautform (`869e7bc`).
+4. **Keyring-Hinweis.** Nach einem Login, der als Datei 0600 gespeichert wird und
+   ohne installierten Keyring läuft, nennt die CLI
+   `pipx inject hochschulstart keyring` (`408bb55`).
+5. **Nächster Schritt bei Fehlern.** Parse-, HTTP- und Limit-Fehler nennen
+   erneut versuchen, Portal im Browser prüfen bzw. `--help`; die Limit-Meldung
+   ist deutsch (`f6e5796`).
 
 ## Nicht testbar / Grenzen
 
 - Echter Login, echte Bewerbungsdaten und verbindliche Annahme/Absage sind ohne
   Testkonto nicht prüfbar. Live wurden nur öffentliche GETs und authentifizierte
   GETs mit synthetischer Session ausgeführt; Letztere enden erwartungsgemäß an
-  der Login-Schranke (siehe FAIL 1). Kein POST an das echte Portal.
+  der Login-Schranke (inzwischen Exit 2, siehe Nachprüfung S6). Kein POST an das echte Portal.
 - Der UX-Fake (`tests/harness/fake_server.py`) setzt bei der Login-Route kein
   `Set-Cookie`; deshalb ist der vollständige Ablauf Login -> Status dort nur mit
   `HOCHSCHULSTART_SESSION` aus `ux-meta.env` möglich. Der vollständige
@@ -153,5 +141,3 @@ Prüfer: unabhängige QA-Iteration (find -> file, keine Code-Fixes)
 - Im Nicht-TTY-Abbruch von `annehmen` lautet der Hinweis `'annehmen … --confirm'`
   ohne vorangestelltes `hochschulstart`; verständlich, aber inkonsistent zu
   anderen Fehlermeldungen.
-- Die Warnung bei ungültigem `--limit` ist englisch (`must be positive`),
-  während die übrige Bedienoberfläche deutsch ist.
