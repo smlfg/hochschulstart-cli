@@ -152,6 +152,18 @@ def test_broken_html_exit_4(cli_runner, portal):
     assert proc.returncode == ec.PARSE
     payload = json_out(proc)
     assert payload["error"]["code"] == ec.PARSE
+    assert "Browser" in payload["error"]["message"]
+
+
+def test_http_500_names_next_step(cli_runner, portal):
+    assert cli_runner("login", "--json").returncode == ec.OK
+    portal.mode = "http_500"
+    proc = cli_runner("status", "--json")
+    assert proc.returncode == ec.NETWORK
+    payload = json_out(proc)
+    assert "HTTP 500" in payload["error"]["message"]
+    assert "erneut" in payload["error"]["message"]
+    assert "Browser" in payload["error"]["message"]
 
 
 def test_maintenance_page_exit_3(cli_runner, portal):

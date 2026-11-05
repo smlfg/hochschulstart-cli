@@ -23,9 +23,17 @@ def require_positive_int(value: int | str, *, name: str = "value") -> int:
     try:
         n = int(value)
     except (TypeError, ValueError):
-        raise CliError(f"{name} must be a positive integer", code=ec.INPUT) from None
+        raise CliError(
+            f"{name} muss eine positive ganze Zahl sein — "
+            "'hochschulstart --help' zeigt die gültigen Werte",
+            code=ec.INPUT,
+        ) from None
     if n <= 0:
-        raise CliError(f"{name} must be positive, got {n}", code=ec.INPUT)
+        raise CliError(
+            f"{name} muss positiv sein (erhielt {n}) — "
+            "'hochschulstart --help' zeigt die gültigen Werte",
+            code=ec.INPUT,
+        )
     return n
 
 
@@ -33,9 +41,17 @@ def require_non_negative_int(value: int | str, *, name: str = "value") -> int:
     try:
         n = int(value)
     except (TypeError, ValueError):
-        raise CliError(f"{name} must be a non-negative integer", code=ec.INPUT) from None
+        raise CliError(
+            f"{name} muss eine nicht-negative ganze Zahl sein — "
+            "'hochschulstart --help' zeigt die gültigen Werte",
+            code=ec.INPUT,
+        ) from None
     if n < 0:
-        raise CliError(f"{name} must be non-negative, got {n}", code=ec.INPUT)
+        raise CliError(
+            f"{name} darf nicht negativ sein (erhielt {n}) — "
+            "'hochschulstart --help' zeigt die gültigen Werte",
+            code=ec.INPUT,
+        )
     return n
 
 

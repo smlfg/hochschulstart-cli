@@ -118,14 +118,30 @@ def _reject_unsupported_auth(html: str) -> None:
 
 def _check(resp, *, context: str) -> None:
     if resp.status in (401, 403):
-        raise CliError(f"{context}: Anmeldung erforderlich oder abgelehnt (HTTP {resp.status})", code=ec.AUTH)
+        raise CliError(
+            f"{context}: Anmeldung erforderlich oder abgelehnt (HTTP {resp.status}) — "
+            "'hochschulstart login' ausführen oder Session erneuern",
+            code=ec.AUTH,
+        )
     if resp.status == 404:
-        raise CliError(f"{context}: nicht gefunden (HTTP 404)", code=ec.INPUT)
+        raise CliError(
+            f"{context}: nicht gefunden (HTTP 404) — Suchbegriff bzw. "
+            "Bewerbungsnummer prüfen und den Befehl erneut ausführen",
+            code=ec.INPUT,
+        )
     if resp.status >= 400:
-        raise CliError(f"{context}: HTTP {resp.status}", code=ec.NETWORK)
+        raise CliError(
+            f"{context}: HTTP {resp.status} — Befehl erneut ausführen; bleibt der "
+            "Fehler, das Portal im Browser prüfen",
+            code=ec.NETWORK,
+        )
     title_low = resp.text[:2000].lower()
     if "wartung" in title_low and "<title>wartung" in title_low:
-        raise CliError("Das DoSV-Bewerbungsportal ist derzeit nicht erreichbar (Wartung).", code=ec.NETWORK)
+        raise CliError(
+            "Das DoSV-Bewerbungsportal ist derzeit nicht erreichbar (Wartung) — "
+            "später erneut versuchen",
+            code=ec.NETWORK,
+        )
 
 
 def _form_post_fields(form: dict) -> dict[str, str]:
@@ -752,7 +768,10 @@ def _decide(action: str, args, json_mode: bool) -> int:
 
     resp = client.post_form(target, fields)
     if resp.status >= 400:
-        hint = decision_error_hint(resp.text) or f"HTTP {resp.status}"
+        hint = decision_error_hint(resp.text) or (
+            f"HTTP {resp.status} — Befehl erneut ausführen; bleibt der Fehler, "
+            "das Portal im Browser prüfen"
+        )
         code = ec.INPUT if resp.status < 500 else ec.NETWORK
         raise CliError(f"{action} {bewerbung_id}: {hint}", code=code)
     _check(resp, context=f"{action} {bewerbung_id}")

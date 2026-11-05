@@ -114,6 +114,9 @@ def test_fristen_limit_and_invalid_limit(cli_runner, portal):
     assert payload["count"] == 2
     proc = cli_runner("fristen", "--limit", "0", "--json")
     assert proc.returncode == ec.INPUT
+    message = json_out(proc)["error"]["message"]
+    assert "positiv" in message
+    assert "--help" in message
 
 
 def test_watch_initial_then_unchanged(cli_runner, portal):

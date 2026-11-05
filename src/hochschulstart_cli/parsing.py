@@ -24,7 +24,11 @@ def _clean(text: str) -> str:
 
 
 def _parse_error(message: str) -> CliError:
-    return CliError(message, code=ec.PARSE)
+    return CliError(
+        f"{message} — Seite erneut laden; bleibt der Fehler, das Portal im "
+        "Browser prüfen",
+        code=ec.PARSE,
+    )
 
 
 @dataclass
