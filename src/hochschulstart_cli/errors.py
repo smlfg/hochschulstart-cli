@@ -60,10 +60,8 @@ def emit_error(
 def run_main(main_fn, argv: list[str] | None = None) -> int:
     """Wrap ``main_fn(argv) -> int`` with CliError / KeyboardInterrupt / EOF handling."""
     arglist = argv if argv is not None else sys.argv[1:]
-    # JSON auch ohne --json, wenn stdin und stdout keine Terminals sind (Pipe/Agent).
-    json_mode = "--json" in arglist or (
-        not sys.stdout.isatty() and not sys.stdin.isatty()
-    )
+    # JSON auch ohne --json, wenn stdout kein Terminal ist (Pipe/Agent).
+    json_mode = "--json" in arglist or not sys.stdout.isatty()
     try:
         return main_fn(arglist if argv is not None else None)
     except CliError as e:

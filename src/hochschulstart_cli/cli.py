@@ -858,7 +858,7 @@ def _main(argv: list[str] | None = None) -> int:
     parser = build_parser(explicit_json)
     args = parser.parse_args(args_list)
     explicit_json = explicit_json or bool(getattr(args, "json", False))
-    auto_json = (not sys.stdout.isatty()) and (not sys.stdin.isatty())
+    auto_json = not sys.stdout.isatty()
     json_mode = explicit_json or auto_json
     return args.func(args, json_mode)
 

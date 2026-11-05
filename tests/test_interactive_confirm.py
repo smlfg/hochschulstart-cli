@@ -7,12 +7,14 @@ alle Formularschritte. Offline gegen den Fake-Portal-Server.
 
 from __future__ import annotations
 
+import contextlib
+
 import pytest
 
 from fake_portal import SYNTH_SESSION
 from hochschulstart_cli import cli as cli_mod
 from hochschulstart_cli import exit_codes as ec
-from test_interactive_login import FakeTty, _run
+from test_interactive_login import FakeStdout, FakeTty, _run
 
 
 @pytest.fixture
@@ -87,7 +89,8 @@ def test_confirm_eof_aborts_130_no_request(
     def run() -> int:
         from hochschulstart_cli.errors import run_main
 
-        return run_main(lambda argv: cli_mod._main(argv), ["absagen", "B-1002"])
+        with contextlib.redirect_stdout(FakeStdout()):
+            return run_main(lambda argv: cli_mod._main(argv), ["absagen", "B-1002"])
 
     code = run()
     assert code == ec.ABORT

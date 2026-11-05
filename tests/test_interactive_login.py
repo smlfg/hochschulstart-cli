@@ -42,9 +42,13 @@ class FakeTty(io.StringIO):
         return True
 
 
+class FakeStdout(FakeTty):
+    """Pipe-freier stdout, damit die CLI im Test den Menschenmodus wählt."""
+
+
 def _run(argv: list[str]):
     """CLI in-process ausführen; CliError wird als (code, Fehler) abgefangen."""
-    out, err = io.StringIO(), io.StringIO()
+    out, err = FakeStdout(), io.StringIO()
     code: int = 0
     error: CliError | None = None
     try:
@@ -140,7 +144,8 @@ def test_login_prompt_eof_exits_130_without_request(
     argv = ["login"]
 
     def run() -> int:
-        return run_main(lambda _argv: cli_mod._main(argv))  # run_main fängt EOFError
+        with contextlib.redirect_stdout(FakeStdout()):
+            return run_main(lambda _argv: cli_mod._main(argv))  # run_main fängt EOFError
 
     code = run()
     assert code == ec.ABORT
