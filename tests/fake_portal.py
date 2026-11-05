@@ -110,11 +110,20 @@ class _Handler(BaseHTTPRequestHandler):
     def portal(self) -> FakePortal:
         return self.server.portal  # type: ignore[attr-defined]
 
-    def _send(self, status: int, body: str, *, cookie: str | None = None) -> None:
+    def _send(
+        self,
+        status: int,
+        body: str,
+        *,
+        cookie: str | None = None,
+        location: str | None = None,
+    ) -> None:
         data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        if location:
+            self.send_header("Location", location)
         if cookie:
             self.send_header("Set-Cookie", f"JSESSIONID={cookie}; Path=/")
         self.end_headers()
@@ -143,6 +152,11 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, MAINTENANCE_HTML)
         if portal.mode == "http_500":
             return self._send(500, "<html><body>Serverfehler</body></html>")
+        protected = path.startswith("/bewerber/bewerbungen") or path == "/bewerber/ranglisten"
+        if portal.mode == "session_expired" and protected:
+            return self._send(302, "", location="/bewerber")
+        if portal.mode == "redirect_loop" and protected:
+            return self._send(302, "", location=path)
 
         if path in ("/bewerber", "/bewerber/"):
             if portal.auth_wall in _AUTH_WALL_HTML:
@@ -243,7 +257,7 @@ class FakePortal:
         self.username = SYNTH_USERNAME
         self.password = SYNTH_PASSWORD
         self.session = SYNTH_SESSION
-        self.mode = "ok"  # ok | bad_html | http_500 | maintenance
+        self.mode = "ok"  # ok | bad_html | http_500 | maintenance | session_expired | redirect_loop
         self.auth_wall: str | None = None  # captcha | 2fa | bundid — Login-Seite ohne Passwort-Formular
         self.login_response_wall: str | None = None  # nach POST: weiterer Auth-Schritt ohne Session
         self.login_fail_status = 403  # 403 | 200 — Portal-Fehlermeldung im Body

@@ -26,6 +26,21 @@ _HEADERS = {
 }
 
 SESSION_COOKIE_NAME = "JSESSIONID"
+_REDIRECT_STATUS = {301, 302, 303, 307, 308}
+
+
+def _is_login_url(url: str) -> bool:
+    """True für die Anmeldeseite bzw. Login-Endpunkte des Portals."""
+    path = urllib.parse.urlsplit(url).path.rstrip("/") or "/"
+    low = path.lower()
+    return low in ("/bewerber", "/anmelden") or "login" in low or "anmeldung" in low
+
+
+def _session_expired_error() -> CliError:
+    return CliError(
+        "Session ungültig/abgelaufen — 'hochschulstart login' ausführen",
+        code=ec.AUTH,
+    )
 
 
 def maintenance_redirect(initial_url: str, final_url: str) -> bool:
@@ -84,6 +99,7 @@ class PortalClient:
         if self.session_cookie:
             headers["Cookie"] = f"{SESSION_COOKIE_NAME}={self.session_cookie}"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        redirect_loop = False
         self._tick()
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -92,6 +108,7 @@ class PortalClient:
                 final_url = resp.geturl()
                 resp_headers = {k: v for k, v in resp.headers.items()}
         except urllib.error.HTTPError as e:  # 4xx/5xx: Antwort trotzdem auswerten
+            redirect_loop = e.code in _REDIRECT_STATUS
             body = e.read() if e.fp else b""
             status = e.code
             final_url = e.geturl() if hasattr(e, "geturl") else url
@@ -104,6 +121,14 @@ class PortalClient:
                 code=ec.NETWORK,
             ) from None
         self._last_request = time.monotonic()
+
+        # Eine vorhandene Session, die auf die Anmeldeseite zurückgeleitet wird
+        # (oder in einer Redirect-Schleife endet), ist abgelaufen. Ohne diese
+        # Prüfung würde der leere Body als Parse-Fehler (Exit 4) enden.
+        if self.session_cookie and (
+            redirect_loop or (_is_login_url(final_url) and not _is_login_url(url))
+        ):
+            raise _session_expired_error()
 
         self._capture_cookie(resp_headers.get("Set-Cookie", ""))
 

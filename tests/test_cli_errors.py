@@ -160,6 +160,40 @@ def test_maintenance_page_exit_3(cli_runner, portal):
     assert proc.returncode == ec.NETWORK
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("status",),
+        ("rangliste",),
+        ("watch", "--dry-run"),
+        ("annehmen", "B-1001", "--dry-run"),
+        ("absagen", "B-1002", "--dry-run"),
+    ],
+)
+def test_expired_session_redirect_exit_auth(cli_runner, portal, argv):
+    """Live leitet eine ungültige Session auf die Login-Seite: Exit 2 statt Parse-Fehler."""
+    assert cli_runner("login", "--json").returncode == ec.OK
+    portal.mode = "session_expired"
+    proc = cli_runner(*argv, "--json")
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == ec.AUTH
+    assert "Session ungültig/abgelaufen" in payload["error"]["message"]
+    assert "hochschulstart login" in payload["error"]["message"]
+
+
+def test_session_redirect_loop_exit_auth(cli_runner, portal):
+    """Das echte Portal läuft bei ungültiger Session in eine Redirect-Schleife (302)."""
+    assert cli_runner("login", "--json").returncode == ec.OK
+    portal.mode = "redirect_loop"
+    proc = cli_runner("status", "--json")
+    assert proc.returncode == ec.AUTH
+    payload = json_out(proc)
+    assert payload["error"]["code"] == ec.AUTH
+    assert "Session ungültig/abgelaufen" in payload["error"]["message"]
+
+
 def test_missing_argument_exit_1(cli_runner, portal):
     proc = cli_runner("annehmen", "--json")
     assert proc.returncode == ec.INPUT
