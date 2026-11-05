@@ -90,6 +90,9 @@ def test_login_sitzung_fragt_interaktiv_und_speichert_session(tmp_path: Path) ->
             assert session.expect("Passwort:", timeout=10), strip_ansi(session.transcript)
             session.send_line("geheim")
             assert session.expect("Login erfolgreich", timeout=10), strip_ansi(session.transcript)
+            assert session.expect("pipx inject hochschulstart keyring", timeout=10), strip_ansi(
+                session.transcript
+            )
             assert session.wait_exit(10) == 0
         finally:
             _close(session)

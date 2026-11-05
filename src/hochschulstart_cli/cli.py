@@ -377,6 +377,13 @@ def cmd_login(args, json_mode: bool) -> int:
             print("Session im Schlüsselbund gespeichert.")
         elif saved == "file":
             print(f"Session gespeichert (Datei mit Rechten 0600): {session_path()}")
+            if _keyring_import() is None:
+                print(
+                    "Hinweis: Optionaler Schlüsselbund per "
+                    "'pipx inject hochschulstart keyring' — ohne Keyring bleibt es "
+                    "bei der Datei mit Rechten 0600.",
+                    file=_stderr(),
+                )
         else:
             print(f"Session gespeichert ({saved}).")
     return ec.OK
