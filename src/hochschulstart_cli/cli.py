@@ -418,10 +418,18 @@ def cmd_logout(args, json_mode: bool) -> int:
     return ec.OK
 
 
+_UMLAUT_FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def _search_fold(text: str) -> str:
+    """Groß-/Kleinschreibung und Umlaut-Umschrift (ae/oe/ue/ss) vereinheitlichen."""
+    return text.casefold().translate(_UMLAUT_FOLD)
+
+
 def _matches(application: dict[str, str], query: str) -> bool:
-    needle = query.casefold()
+    needle = _search_fold(query)
     return any(
-        needle in (application.get(field) or "").casefold()
+        needle in _search_fold(application.get(field) or "")
         for field in ("program", "university", "id")
     )
 

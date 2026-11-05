@@ -63,6 +63,27 @@ def test_status_filter(cli_runner, portal):
     assert payload["applications"][0]["id"] == "B-1002"
 
 
+def test_status_search_umlaut_transliteration(cli_runner, portal):
+    _login(cli_runner)
+    payload = json_out(cli_runner("status", "Musteruniversitaet", "--json"))
+    assert payload["count"] == 1
+    assert payload["applications"][0]["id"] == "B-1001"
+    umlaut = json_out(cli_runner("status", "Musteruniversität", "--json"))
+    assert umlaut["count"] == payload["count"]
+
+
+def test_search_fold_handles_ae_oe_ue_both_ways():
+    from hochschulstart_cli.cli import _matches
+
+    row = {
+        "id": "B-1003",
+        "program": "Ökologie und Umwelt",
+        "university": "Universität Köln",
+    }
+    for query in ("oekologie", "ökologie", "Koeln", "köln", "Universitaet"):
+        assert _matches(row, query), query
+
+
 def test_rangliste_happy_and_filter(cli_runner, portal):
     _login(cli_runner)
     payload = json_out(cli_runner("rangliste", "--json"))
