@@ -46,7 +46,7 @@ $ hochschulstart login
 < Passwort:
 > geheim
 < Login erfolgreich.
-< Session gespeichert (Datei mit Rechten 0600).
+< Session gespeichert (Datei mit Rechten 0600)
 ! exit 0
 ```
 
